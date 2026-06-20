@@ -1,0 +1,39 @@
+# Binaries and build output
+bin/
+dist/
+build/
+tmp/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+
+# Go workspace and coverage artifacts
+go.work
+go.work.sum
+coverage.out
+*.coverprofile
+
+# Environment and local configuration
+.env
+.env.*
+!.env.example
+.envrc
+*.private.*
+LOCAL_NOTES.md
+docs/LOCAL.md
+.local/
+scratch
+.claude
+.codex
+
+# Editor and OS files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log

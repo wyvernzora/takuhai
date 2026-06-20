@@ -1,0 +1,10 @@
+.git
+.github
+.githooks
+.gitignore
+.dockerignore
+Dockerfile
+*.md
+docs/
+testdata/
+**/*_test.go
