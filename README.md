@@ -1,55 +1,65 @@
-# takuhai
+<div align="center">
+    <br>
+    <br>
+    <img width="256" src="docs/assets/logo-full-256.png">
+    <h1 align="center">宅配</h1>
+</div>
+
+<p align="center">
+<b>takuhai - self-hosted anime release indexer</b>
+</p>
+
+<hr>
+<br>
+<br>
 
 **takuhai** (宅配 — "home delivery / courier") is a self-hosted anime **release
-indexer**: a dumb, durable store + work queue + query API. It continuously
-ingests releases from pluggable sources (DMHY first), keeps the raw records
-immutably, dedups them by infohash into a queryable catalog, and exposes the
-unmatched ones as a work queue over MCP.
+index**: a dumb, durable store + work queue + query API. It receives raw releases
+pushed from pluggable sources (DMHY first), keeps them immutably, dedups them by
+infohash into a queryable catalog, and exposes the unmatched ones as a work queue.
 
 It pairs with [`kura`](https://github.com/wyvernzora/kura) (蔵 — "storehouse").
-The hard direction — *canonical identity → good search keywords* — is solved
-once at ingest: an **external** matching agent claims unmatched releases,
-resolves each to a canonical `tvdb:NNN` ref plus attributes, and reports the
-result back. Consumers that already hold a ref then query the index directly,
-no keyword guessing.
 
-The indexer holds **no matching intelligence**. Canonical refs are opaque
-strings it never validates; its only defense against a bad match is provenance
-(confidence + evidence + agent id) and revisability. See
-[`docs/indexer-handover.md`](docs/indexer-handover.md) for the full design.
+## The idea
 
-> **Status:** bootstrap skeleton. The server is not yet wired — see the build
-> plan in the handover (§13). Phase 0 (backfill spike) is the starting point.
+The hard direction of release management — *canonical series → search keywords* — is
+intractable; the forward direction — *raw release name → canonical series* — is not.
+takuhai inverts the problem: an **external matching agent** resolves each release to a
+canonical ref once, at ingest. Consumers that already hold a ref then query
+the index **directly by ref**, no keyword guessing.
 
-## Build & run
+takuhai holds **no matching intelligence** of its own. Canonical refs are opaque
+strings it never resolves; it only records the matcher outcome.
 
-```sh
-go build -o bin/takuhai ./cmd/takuhai
-./bin/takuhai --transport=stdio
-./bin/takuhai --transport=http --addr=:8080
-```
+## Architecture in one breath
 
-HTTP transport will expose the MCP endpoint at `/mcp` and a liveness probe at
-`/healthz`.
+n8n drives everything. A stateless **crawler** (`POST /crawl`) fetches posts; n8n
+pushes them to takuhai's `POST /ingest`, which dedups and queues them. n8n drives the
+**match loop** over the queue REST API; a stateless matcher resolves each
+release. Consumers read the catalog over an **MCP** API (`list_releases`,
+`resolve_magnets`). Postgres is both the store and the work queue. See
+[docs/design.md](docs/design.md).
 
-## Container
+## Quick start
 
 ```sh
-docker build -t takuhai .
-docker run --rm -p 8080:8080 takuhai            # HTTP on :8080
-docker run --rm -i takuhai --transport=stdio    # stdio
+make devserver                                     # Postgres + takuhai + DMHY crawler
+
+make build                                          # → bin/takuhai
+TAKUHAI_DATABASE_URL=postgres://… \
+  ./bin/takuhai --addr=:8080                        # /ingest, /queue/*, /submit, /mcp, /healthz
 ```
 
-## Configuration
+The binary runs its migrations on startup. Config is flag- or `TAKUHAI_`-env driven
+(`--addr`, `--database-url`, `--log-level`). See [docs/operations.md](docs/operations.md)
+for deployment and the container build.
 
-All flags honor a `TAKUHAI_`-prefixed environment-variable fallback.
+## Documentation
 
-| Flag | Env | Default |
-| --- | --- | --- |
-| `--transport` | `TAKUHAI_TRANSPORT` | `stdio` |
-| `--addr` | `TAKUHAI_ADDR` | `:8080` |
-| `--database-url` | `TAKUHAI_DATABASE_URL` | _(unset)_ |
-| `--log-level` | `TAKUHAI_LOG_LEVEL` | `info` |
+- [docs/design.md](docs/design.md) — architecture, data model, queue semantics,
+  external contracts, invariants.
+- [docs/operations.md](docs/operations.md) — build, configure, deploy, run, observe.
+- [docs/conformance-matrix.md](docs/conformance-matrix.md) — the spec-clause → test map.
 
 ## Development
 
@@ -57,6 +67,8 @@ All flags honor a `TAKUHAI_`-prefixed environment-variable fallback.
 make hooks    # point git at .githooks/ (commit-message guard)
 make check    # fmt + vet + lint + test + build
 ```
+
+This is a Go workspace: the root service module + the `sources/dmhy` crawler module.
 
 ## License
 
