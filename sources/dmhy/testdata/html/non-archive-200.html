@@ -1,0 +1,17 @@
+<!--
+  SYNTHETIC HTML fixture. A 200-OK page that is NOT a real DMHY archive listing: it
+  has ZERO content rows AND lacks the topic_list listing-table anchor — a stand-in for
+  a CDN interstitial / truncated body / markup drift. parseArchivePage must NOT treat
+  this as a legitimately-empty floor; it must surface it as a parse error so the
+  page-walk never counts it toward the consecutive-empty end-of-archive threshold
+  (which would silently truncate backfill at a fake floor).
+-->
+<!DOCTYPE html>
+<html>
+<head><title>Just a moment...</title></head>
+<body>
+  <div class="cf-browser-verification">
+    <p>Checking your browser before accessing share.dmhy.org.</p>
+  </div>
+</body>
+</html>

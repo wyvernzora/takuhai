@@ -1,0 +1,26 @@
+<!--
+  SYNTHETIC HTML-archive fixture. A 200-OK empty-but-paginated floor page: the same
+  outer <table id="topic_list"> container (thead intact) as page-real.html, but ZERO
+  content rows (tr.class-empty) in the tbody. The real crawl floor (page-00378) still
+  carries 78 rows, so an empty-but-paginated page does not exist in the crawl and is
+  hand-built per the Phase-0 provenance list. This is the page the Phase-4 terminator
+  must detect (design §8: end-of-archive = positively-confirmed zero parsed rows on a
+  200 OK, NOT the absence of a next-page link).
+-->
+<table  style="width:100%;"  class="tablesorter" id="topic_list" cellpadding="0" cellspacing="1" border="0" width="" frame="void">
+	<thead>
+		<tr>
+			<th class="{sorter: 'magicDate'}" width="96"><span class="title">張貼日期</span></th>
+			<th class="{sorter: 'text'}" width="5%"><span class="title">分類</span></th>
+			<th class="{sorter: 'text'}" ><span class="title">標題</span></th>
+			<th class="{sorter: false}" width="10%" nowrap="nowrap"><span class="title">磁鏈</span></th>
+			<th class="{sorter: 'filesize', sortInitialOrder: 'desc'}"  width="7%"><span class="title">大小</span></th>
+			<th class="{sorter: 'digit', sortInitialOrder: 'desc'}" width="5%"><span class="title">種子</span></th>
+			<th class="{sorter: 'digit', sortInitialOrder: 'desc'}" width="5%"><span class="title">下載</span></th>
+			<th class="{sorter: 'digit', sortInitialOrder: 'desc'}" width="5%"><span class="title">完成</span></th>
+			<th class="{sorter: 'text'}" width="9%"><span class="title">發佈人</span></th>
+		</tr>
+	</thead>
+	<tbody>
+	</tbody>
+</table>

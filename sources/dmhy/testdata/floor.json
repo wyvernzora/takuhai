@@ -1,0 +1,16 @@
+{
+  "sources": {
+    "dmhy": {
+      "sort_id_31": {
+        "floor_page": 378,
+        "calendar_floor": "2007"
+      },
+      "sort_id_2": {
+        "floor_page": null,
+        "note": "per-episode (sort_id=2) floor deferred to Phase 4 (shallow crawl); not gated by the Phase 0 manifest test"
+      }
+    }
+  },
+  "crawl_rate_rps": 0.5,
+  "consecutive_empty_threshold": 2
+}
