@@ -1,5 +1,7 @@
 # Binaries and build output
 bin/
+# root binary from a bare `go build .` (the canonical build, `make build`, outputs to bin/takuhai)
+/takuhai
 dist/
 build/
 tmp/
@@ -10,8 +12,6 @@ tmp/
 *.test
 
 # Go workspace and coverage artifacts
-go.work
-go.work.sum
 coverage.out
 *.coverprofile
 
@@ -21,12 +21,15 @@ coverage.out
 !.env.example
 .envrc
 *.private.*
+*.private/
 LOCAL_NOTES.md
 docs/LOCAL.md
 .local/
 scratch
+.checkpoint/
 .claude
 .codex
+.reviews
 
 # Editor and OS files
 .DS_Store

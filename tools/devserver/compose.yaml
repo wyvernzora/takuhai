@@ -1,0 +1,53 @@
+name: takuhai
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: takuhai
+      POSTGRES_USER: takuhai
+      POSTGRES_PASSWORD: takuhai
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U takuhai -d takuhai"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  takuhai:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        BUILD_DIR: .
+        CMD_PKG: ./cmd/takuhai
+        VERSION: dev
+    environment:
+      TAKUHAI_ADDR: :8080
+      TAKUHAI_DATABASE_URL: postgres://takuhai:takuhai@postgres:5432/takuhai?sslmode=disable
+      TAKUHAI_LOG_LEVEL: debug
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  dmhy:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        BUILD_DIR: sources/dmhy
+        CMD_PKG: ./cmd/takuhai-dmhy
+        VERSION: dev
+    environment:
+      TAKUHAI_DMHY_ADDR: :8080
+      TAKUHAI_DMHY_BASE_URL: https://share.dmhy.org
+      TAKUHAI_DMHY_SORT_ID: "2"
+      TAKUHAI_DMHY_LOG_LEVEL: debug
+    ports:
+      - "8081:8080"

@@ -1,0 +1,181 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, for example v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+  packages: write
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      sha: ${{ steps.verify.outputs.sha }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version="${{ inputs.version }}"
+          else
+            version="${GITHUB_REF_NAME}"
+          fi
+          if [[ ! "$version" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+            echo "version must look like v0.1.0, got $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Verify release commit is on main with passing CI
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git fetch --force --no-tags origin \
+            "+refs/tags/$VERSION:refs/tags/$VERSION" \
+            +refs/heads/main:refs/remotes/origin/main
+
+          tagged_sha="$(git rev-parse "$VERSION^{commit}")"
+          echo "sha=$tagged_sha" >> "$GITHUB_OUTPUT"
+          if ! git merge-base --is-ancestor "$tagged_sha" origin/main; then
+            echo "::error::Release tag $VERSION points to $tagged_sha, which is not reachable from origin/main."
+            exit 1
+          fi
+
+          ci_run_url="$(
+            gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs" \
+              --method GET \
+              -f branch=main \
+              -f event=push \
+              -f head_sha="$tagged_sha" \
+              -f status=completed \
+              --jq '.workflow_runs[] | select(.conclusion == "success") | .html_url' |
+              head -n 1
+          )"
+          if [ -z "$ci_run_url" ]; then
+            echo "::error::Release commit $tagged_sha does not have a successful completed ci.yml push run on main."
+            exit 1
+          fi
+
+          echo "Release commit $tagged_sha is on main and passed CI: $ci_run_url"
+
+  publish-images:
+    name: publish ${{ matrix.component }}
+    needs: verify
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: takuhai
+            image: ghcr.io/${{ github.repository }}
+            context: .
+            file: Dockerfile
+            build_args: |
+              BUILD_DIR=.
+              CMD_PKG=./cmd/takuhai
+            description: Anime release indexer + match work queue (REST + MCP)
+          - component: crawler-dmhy
+            image: ghcr.io/${{ github.repository }}/crawler-dmhy
+            context: .
+            file: Dockerfile
+            build_args: |
+              BUILD_DIR=sources/dmhy
+              CMD_PKG=./cmd/takuhai-dmhy
+            description: DMHY stateless crawler (POST /crawl)
+          - component: n8n-nodes
+            image: ghcr.io/${{ github.repository }}/n8n-nodes
+            context: .
+            file: integrations/n8n/Dockerfile
+            build_args: ''
+            description: takuhai custom nodes for n8n (init container)
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Check out release commit
+        run: git checkout --detach "${{ needs.verify.outputs.sha }}"
+
+      - uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3 # v4
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
+
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute tags + labels
+        id: meta
+        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6
+        with:
+          images: ${{ matrix.image }}
+          tags: |
+            type=raw,value=${{ needs.verify.outputs.version }}
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.title=${{ matrix.component }}
+            org.opencontainers.image.description=${{ matrix.description }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ needs.verify.outputs.version }}
+            org.opencontainers.image.revision=${{ needs.verify.outputs.sha }}
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build & push
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ needs.verify.outputs.version }}
+            ${{ matrix.build_args }}
+          cache-from: type=gha,scope=release-${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=release-${{ matrix.component }}
+          provenance: false
+
+  github-release:
+    name: github release
+    needs: [verify, publish-images]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "GitHub release $VERSION already exists."
+            exit 0
+          fi
+
+          gh release create "$VERSION" \
+            --title "$VERSION" \
+            --generate-notes \
+            --verify-tag

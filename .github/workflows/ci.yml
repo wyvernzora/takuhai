@@ -3,21 +3,15 @@ name: ci
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
 
-# Cancel superseded runs on PRs and main-branch pushes; never cancel a
-# tag release (a half-pushed manifest list leaves the registry in a
-# confusing state).
+# Cancel superseded runs on PRs and main-branch pushes.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
-
-env:
-  IMAGE_NAME: ghcr.io/${{ github.repository }}
 
 jobs:
   go:
@@ -34,51 +28,135 @@ jobs:
       # gofmt drift check. The Makefile `fmt` target rewrites in place,
       # which would silently auto-fix CI runs; here we use `-l` to list
       # offenders without mutation and fail when the list is non-empty.
+      # The dir set spans every module's source roots (root + nested
+      # sources/dmhy) — gofmt walks paths, so the workspace boundary does
+      # not matter, but the new pkg/ and sources/ trees must be listed.
       - name: gofmt
         run: |
-          drift=$(gofmt -l cmd internal)
+          drift=$(gofmt -l cmd internal pkg sources)
           if [ -n "$drift" ]; then
             echo "::error::gofmt drift in:" >&2
             echo "$drift" >&2
             exit 1
           fi
 
-      - name: go vet
-        run: go vet ./...
+      # go.work drift check. A stale workspace (a `use` added without a
+      # matching `go work sync`) would otherwise pass CI silently. The
+      # crawler module (sources/dmhy) does pull a cross-module external dep
+      # (golang.org/x/time), but the two modules share no *overlapping*
+      # dependency whose version needs workspace-level resolution, so
+      # `go work sync` is a no-op here and generates no go.work.sum — the
+      # check just guards against future drift; do not add a go.work.sum to
+      # satisfy it.
+      - name: go work sync drift
+        run: |
+          go work sync
+          git diff --exit-code
 
-      # Pinned to match the version used locally; avoids CI-only failures
-      # when a newer lint release surfaces issues no developer has hit yet.
-      # Bump intentionally with the local install.
-      #
-      # install-mode=goinstall compiles golangci-lint from source against
-      # the Go toolchain `setup-go` just installed. The default `binary`
-      # mode downloads the upstream prebuilt binary, which may be built
-      # with an older Go; when the project targets a newer Go version,
-      # golangci-lint refuses to load config with a version mismatch.
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9
+      # Per-module loop: a root-only `./...` does NOT descend into the
+      # nested sources/dmhy module (go.work is not traversed by `./...`),
+      # so vet/build/test/lint each run once per module root. The
+      # `-tags=conformance` build is a hard gate that catches a partial
+      # reshape (a dangling symbol left after a deletion compiles only if
+      # every module is built under the tag). golangci-lint is invoked
+      # directly (not the action) so it runs inside each module's cwd; it
+      # is pinned to match the locally-installed version, and goinstall'd
+      # so it compiles against the Go toolchain setup-go just installed
+      # (the prebuilt binary may be built with an older Go and refuse the
+      # config version).
+      - name: install golangci-lint
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+
+      - name: per-module vet / build / test / lint
+        run: |
+          for m in . sources/dmhy; do
+            echo "::group::module $m"
+            (cd "$m" \
+              && go vet ./... \
+              && go build ./... \
+              && go build -tags=conformance ./... \
+              && go test -race -count=1 -tags=conformance ./... \
+              && golangci-lint run ./...) || { echo "::error::module $m failed"; exit 1; }
+            echo "::endgroup::"
+          done
+
+      - name: go build (binaries)
+        run: |
+          go build -trimpath -o bin/takuhai ./cmd/takuhai
+          (cd sources/dmhy && go build -trimpath -o ../../bin/takuhai-dmhy ./cmd/takuhai-dmhy)
+
+  # Real-binary smoke (cmd/takuhai/smoke_test.go, //go:build smoke) — the highest-
+  # fidelity gate over the DEPLOYABLE binary, the one shape the conformance suite cannot
+  # see (it drives httptest handlers, not the built binary). It spins a real Postgres via
+  # testcontainers (ubuntu runners ship Docker, the same engine conformance already uses),
+  # BUILDS + RUNS cmd/takuhai and asserts startup migrations -> /healthz -> /ingest ->
+  # /queue -> /mcp -> fail-fast bind -> bounded graceful drain
+  # (F12/F13/F16/F5). Without this, those deploy-shape clauses regress silently. Behind the
+  # smoke tag so default/conformance builds skip the container + compile cost; this job is
+  # the only place it runs in CI, so build-push gates on it too.
+  smoke:
+    name: smoke
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
-          version: v2.12.2
-          install-mode: goinstall
+          go-version-file: go.mod
+          cache: true
 
-      # -race catches data races; -count=1 disables test caching so a green
-      # CI run reflects an actual execution, not a stale cached pass.
-      - name: go test
-        run: go test -race -count=1 ./...
+      # -count=1 disables test caching so a green run reflects an actual execution
+      # (the binary is rebuilt + re-exercised against a fresh container every time).
+      - name: real-binary smoke
+        run: go test -tags=smoke -run TestSmoke -count=1 ./cmd/takuhai
 
-      - name: go build
-        run: go build -trimpath -o bin/takuhai ./cmd/takuhai
+  # End-to-end workflow test over built takuhai + takuhai-dmhy binaries, a fake local
+  # DMHY archive, Postgres, REST, and MCP over /mcp.
+  e2e:
+    name: e2e
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
-  # Build & push the container image to GHCR. Gated on the go job so a
-  # red commit can't ship a poisoned :dev tag. Pull-request events skip
-  # this entirely (no push, no permission to GHCR from forks).
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: end-to-end workflow
+        run: go test -tags=e2e -run TestEndToEndWorkflow -count=1 ./e2e
+
+  # Build the n8n custom-node TypeScript package on PRs + pushes. This catches both
+  # type errors and packaging/asset-copy drift before the image build.
+  n8n:
+    name: n8n
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+
+      - name: corepack pnpm build
+        working-directory: integrations/n8n
+        run: |
+          corepack enable
+          corepack pnpm install --frozen-lockfile
+          corepack pnpm build
+
+  # Build & push the container image to GHCR. Gated on the go + smoke jobs so a
+  # red commit — or one that breaks the deployable binary's wired shape — can't
+  # ship a poisoned :dev tag. Pull-request events skip this entirely (no push, no
+  # permission to GHCR from forks).
   #
   # Tag rules:
   #   push to main         → :dev  (VERSION=dev-<short_sha>)
-  #   push tag vX.Y.Z      → :vX.Y.Z + :latest  (VERSION=vX.Y.Z)
+  #
+  # Versioned tags and :latest are owned by release.yaml.
   build-push:
     name: build & push
-    needs: [go]
+    needs: [go, smoke, e2e, n8n]
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     permissions:
@@ -86,6 +164,37 @@ jobs:
       packages: write
     outputs:
       version: ${{ steps.version.outputs.value }}
+    # Three images, published together on the same VERSION so the n8n nodes never
+    # drift from the service they call: the takuhai service + the DMHY crawler (one
+    # parametric Go Dockerfile, selected by build-args) and the n8n custom-nodes init
+    # image (its own Dockerfile under integrations/n8n). The crawler + nodes images
+    # nest under the repo path so names never collide.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: takuhai
+            image: ghcr.io/${{ github.repository }}
+            context: .
+            file: Dockerfile
+            build_args: |
+              BUILD_DIR=.
+              CMD_PKG=./cmd/takuhai
+            description: Anime release indexer + match work queue (REST + MCP)
+          - component: crawler-dmhy
+            image: ghcr.io/${{ github.repository }}/crawler-dmhy
+            context: .
+            file: Dockerfile
+            build_args: |
+              BUILD_DIR=sources/dmhy
+              CMD_PKG=./cmd/takuhai-dmhy
+            description: DMHY stateless crawler (POST /crawl)
+          - component: n8n-nodes
+            image: ghcr.io/${{ github.repository }}/n8n-nodes
+            context: .
+            file: integrations/n8n/Dockerfile
+            build_args: ''
+            description: takuhai custom nodes for n8n (init container)
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
@@ -96,11 +205,7 @@ jobs:
       - name: Determine VERSION
         id: version
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            echo "value=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
-          else
-            echo "value=dev-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-          fi
+          echo "value=dev-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       # QEMU enables linux/arm64 emulation on the amd64 GH-hosted runner.
       - uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3 # v4
@@ -116,14 +221,12 @@ jobs:
         id: meta
         uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6
         with:
-          images: ${{ env.IMAGE_NAME }}
+          images: ${{ matrix.image }}
           tags: |
             type=raw,value=dev,enable=${{ github.ref == 'refs/heads/main' }}
-            type=ref,event=tag
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
           labels: |
-            org.opencontainers.image.title=takuhai
-            org.opencontainers.image.description=Anime release indexer + match work queue (MCP)
+            org.opencontainers.image.title=${{ matrix.component }}
+            org.opencontainers.image.description=${{ matrix.description }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.version=${{ steps.version.outputs.value }}
             org.opencontainers.image.revision=${{ github.sha }}
@@ -132,15 +235,20 @@ jobs:
       - name: Build & push
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
         with:
-          context: .
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # VERSION applies to every image (stamped into the Go binary; consumed as a
+          # no-op ARG by the n8n image so it shares the tag). The Go-only BUILD_DIR/
+          # CMD_PKG come from the per-image build_args.
           build-args: |
             VERSION=${{ steps.version.outputs.value }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            ${{ matrix.build_args }}
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
           provenance: false
 
   # Prune untagged GHCR image versions accumulated by repeated :dev /
@@ -153,11 +261,24 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        # GHCR package names, NOT image suffixes. The nested images push to
+        # ghcr.io/<owner>/<repo>/<suffix>, and the path segments under the owner ARE
+        # the package name — so e.g. the crawler package is "<repo>/crawler-dmhy"
+        # (e.g. takuhai/crawler-dmhy), not the bare "crawler-dmhy".
+        # github.event.repository.name resolves to <repo> on a push event, keeping
+        # this correct if the repo is ever renamed.
+        package:
+          - ${{ github.event.repository.name }}
+          - ${{ github.event.repository.name }}/crawler-dmhy
+          - ${{ github.event.repository.name }}/n8n-nodes
     steps:
       - name: Delete untagged versions, keep last 10
         uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55 # v5
         with:
-          package-name: takuhai
+          package-name: ${{ matrix.package }}
           package-type: container
           delete-only-untagged-versions: 'true'
           min-versions-to-keep: 10
