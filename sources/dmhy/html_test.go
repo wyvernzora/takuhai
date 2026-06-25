@@ -32,3 +32,30 @@ func TestRowPublishedAtMissing(t *testing.T) {
 		t.Fatalf("rowPublishedAt(no date) = %v, want zero time", got)
 	}
 }
+
+func TestRowTitleUsesTopicHrefAndPrependsTeamTag(t *testing.T) {
+	row := `<td class="title">
+		<span class="tag"><a href="/topics/list/team_id/816">ANi</a></span>
+		<a href="/topics/view/720662_ANi_RentaGirlfriend.html" target="_blank">RentaGirlfriend S05 - 10</a>
+	</td>`
+
+	href, title := rowTitle(row)
+	if href != "/topics/view/720662_ANi_RentaGirlfriend.html" {
+		t.Fatalf("rowTitle href = %q, want topic href", href)
+	}
+	if title != "[ANi] RentaGirlfriend S05 - 10" {
+		t.Fatalf("rowTitle title = %q, want team-prefixed release title", title)
+	}
+}
+
+func TestRowTitleAlwaysPreservesTeamTag(t *testing.T) {
+	row := `<td class="title">
+		<span class="tag"><a href="/topics/list/team_id/816">ANi</a></span>
+		<a href="/topics/view/720662_ANi_RentaGirlfriend.html" target="_blank">[ANi] RentaGirlfriend S05 - 10</a>
+	</td>`
+
+	_, title := rowTitle(row)
+	if title != "[ANi] [ANi] RentaGirlfriend S05 - 10" {
+		t.Fatalf("rowTitle title = %q, want preserved team prefix", title)
+	}
+}

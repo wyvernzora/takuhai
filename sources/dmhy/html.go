@@ -142,11 +142,21 @@ func rowTitle(row string) (href, title string) {
 	if cell == nil {
 		return "", ""
 	}
-	a := anchorRe.FindStringSubmatch(cell[1])
-	if a == nil {
-		return "", ""
+	team := ""
+	for _, a := range anchorRe.FindAllStringSubmatch(cell[1], -1) {
+		if strings.Contains(a[1], "/topics/list/team_id/") {
+			team = strings.TrimSpace(a[2])
+			continue
+		}
+		if strings.Contains(a[1], "/topics/view/") {
+			title := strings.TrimSpace(a[2])
+			if team != "" {
+				title = "[" + team + "] " + title
+			}
+			return a[1], title
+		}
 	}
-	return a[1], strings.TrimSpace(a[2])
+	return "", ""
 }
 
 // rowSourceID derives the source-native stable id from the topic href
