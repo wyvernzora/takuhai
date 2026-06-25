@@ -1,4 +1,5 @@
 import type {
+	Icon,
 	ICredentialTestRequest,
 	ICredentialType,
 	INodeProperties,
@@ -12,6 +13,7 @@ export class TakuhaiApi implements ICredentialType {
 	name = 'takuhaiApi';
 	displayName = 'Takuhai API';
 	documentationUrl = 'https://github.com/wyvernzora/takuhai';
+	icon: Icon = 'file:takuhai.svg';
 
 	properties: INodeProperties[] = [
 		{

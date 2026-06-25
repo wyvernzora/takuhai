@@ -9,7 +9,7 @@ export class TakuhaiCrawlerApi implements ICredentialType {
 	name = 'takuhaiCrawlerApi';
 	displayName = 'Takuhai Crawler API';
 	documentationUrl = 'https://github.com/wyvernzora/takuhai';
-	// Same brand asset as the nodes (docs/assets/logo-face.svg); copy-assets.mjs places
+	// Same cropped n8n asset as the nodes; copy-assets.mjs places
 	// takuhai.svg next to the compiled credential, where n8n resolves file: icons.
 	icon: Icon = 'file:takuhai.svg';
 

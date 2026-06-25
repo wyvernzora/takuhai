@@ -5,7 +5,7 @@
 # reads via N8N_CUSTOM_EXTENSIONS (see entrypoint.sh).
 #
 # Built from the REPO ROOT context (CI selects file=integrations/n8n/Dockerfile) so the
-# canonical node icon docs/assets/logo-face.svg is in scope — copy-assets reads it via
+# node icon docs/assets/logo-n8n.svg is in scope — copy-assets reads it via
 # ../../docs/assets, the same path a local `pnpm build` uses. The WORKDIR mirrors the
 # repo layout to keep that path identical.
 
@@ -20,8 +20,8 @@ RUN corepack enable
 COPY integrations/n8n/package.json integrations/n8n/pnpm-lock.yaml ./
 RUN corepack pnpm install --frozen-lockfile
 COPY integrations/n8n/ ./
-# The node icon's single source of truth (resolved as ../../docs/assets at build time).
-COPY docs/assets/logo-face.svg /src/docs/assets/logo-face.svg
+# The node icon asset (resolved as ../../docs/assets at build time).
+COPY docs/assets/logo-n8n.svg /src/docs/assets/logo-n8n.svg
 RUN corepack pnpm build
 # Reduce to the loadable package: the n8n manifest (package.json) + compiled dist/.
 RUN mkdir -p /pkg && cp -r package.json dist /pkg/

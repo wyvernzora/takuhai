@@ -1,6 +1,6 @@
-// Place the takuhai icon next to each compiled node AND credential. The canonical artwork
-// is the repo brand asset docs/assets/logo-face.svg (single source of truth) — tsc emits
-// only JS/d.ts, so the icon is copied in here. n8n resolves a node's
+// Place the takuhai icon next to each compiled node AND credential. The n8n icon is
+// a cropped copy of the repo brand asset, since n8n fits the whole SVG viewBox.
+// tsc emits only JS/d.ts, so the icon is copied in here. n8n resolves a node's
 // `icon: 'file:takuhai.svg'` relative to its own dist/nodes/<Node>/ dir, and a credential's
 // relative to dist/credentials/, so the same file is dropped in each place. The path is
 // repo-relative and identical for a local build (cwd = integrations/n8n) and the Docker
@@ -8,7 +8,7 @@
 import { access, cp, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
-const ICON = '../../docs/assets/logo-face.svg';
+const ICON = '../../docs/assets/logo-n8n.svg';
 const NODES = 'dist/nodes';
 const CREDENTIALS = 'dist/credentials';
 

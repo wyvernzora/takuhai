@@ -83,10 +83,10 @@ corepack pnpm install --frozen-lockfile
 corepack pnpm build            # tsc → dist/ + node icon
 ```
 
-All three nodes share one icon — the repo brand asset
-[`docs/assets/logo-face.svg`](../../docs/assets/logo-face.svg). The build copies it into
-each compiled node dir, so change the logo there (not per node). The container image
-builds from the repo root so that asset is in scope.
+All three nodes share one icon —
+[`docs/assets/logo-n8n.svg`](../../docs/assets/logo-n8n.svg). The build copies it into
+each compiled node dir and credentials dir. The container image builds from the repo
+root so that asset is in scope.
 
 Local n8n: point `N8N_CUSTOM_EXTENSIONS` at this package, or symlink `dist` into
 `~/.n8n/custom`.

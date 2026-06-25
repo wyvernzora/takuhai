@@ -5,13 +5,14 @@
 .dockerignore
 Dockerfile
 *.md
-# Exclude docs/ from build contexts EXCEPT the one brand asset the n8n image bakes in
-# as the node icon (docs/assets/logo-face.svg). Spelled out so a parent-dir exclusion
+# Exclude docs/ from build contexts EXCEPT the icon asset the n8n image bakes in.
+# Spelled out so a parent-dir exclusion
 # does not mask the re-include.
 docs/*
 !docs/assets
 docs/assets/*
 !docs/assets/logo-face.svg
+!docs/assets/logo-n8n.svg
 testdata/
 **/*_test.go
 crawl.private/
