@@ -6,11 +6,12 @@ GOFMT_DIRS  := cmd internal pkg sources
 # per-module targets below loop over both roots.
 MODULES := . sources/dmhy
 
-# VERSION stamps the binary via -ldflags="-X main.version=...".
+# VERSION and COMMIT stamp the binary via -ldflags.
 # Defaults to `git describe` so dev builds carry a meaningful identifier
 # without a manual override. CI/release builds pass VERSION=vX.Y.Z explicitly.
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-GO_LDFLAGS := -s -w -X main.version=$(VERSION)
+COMMIT  ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
+GO_LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 
 # golangci-lint resolution order: PATH → $GOBIN → $GOPATH/bin.
 GOLANGCI_LINT ?= $(shell if command -v golangci-lint >/dev/null 2>&1; then \

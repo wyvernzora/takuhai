@@ -38,10 +38,12 @@ func (h *Handler) handleIngest(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil {
+		h.metrics.IngestBatch(0, "error")
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 	if len(req.Posts) > maxBatchPosts {
+		h.metrics.IngestBatch(len(req.Posts), "error")
 		http.Error(w, "batch too large", http.StatusBadRequest)
 		return
 	}
@@ -50,6 +52,7 @@ func (h *Handler) handleIngest(w http.ResponseWriter, r *http.Request) {
 	for i := range req.Posts {
 		post := req.Posts[i]
 		if strings.TrimSpace(post.Source) == "" || strings.TrimSpace(post.SourceID) == "" {
+			h.metrics.IngestBatch(len(req.Posts), "error")
 			http.Error(w, "post missing source or source_id", http.StatusBadRequest)
 			return
 		}
@@ -57,15 +60,18 @@ func (h *Handler) handleIngest(w http.ResponseWriter, r *http.Request) {
 
 	batch, status, msg := h.ingestBatch(ctx, req.Posts)
 	if status != http.StatusOK {
+		h.metrics.IngestBatch(len(req.Posts), "error")
 		http.Error(w, msg, status)
 		return
 	}
 
 	qs, err := h.ingest.QueueStats(ctx)
 	if err != nil {
+		h.metrics.IngestBatch(len(req.Posts), "error")
 		http.Error(w, "queue stats failed", http.StatusInternalServerError)
 		return
 	}
+	h.metrics.IngestBatch(len(req.Posts), "ok")
 
 	resp := rawpost.IngestSummary{
 		Batch: batch,
@@ -89,24 +95,31 @@ func (h *Handler) ingestBatch(ctx context.Context, posts []rawpost.RawPost) (bat
 		if err != nil {
 			if errors.Is(err, infohash.ErrSkipInfohash) {
 				batch.Skipped++
+				h.metrics.IngestPost(post.Source, "skipped")
 				continue
 			}
+			h.metrics.IngestPost(post.Source, "error")
 			return batch, http.StatusInternalServerError, "infohash normalization failed"
 		}
 
 		out, err := h.ingest.IngestN(ctx, ingestParams(post, ih))
 		if err != nil {
+			h.metrics.IngestPost(post.Source, "error")
 			return batch, http.StatusInternalServerError, "ingest failed"
 		}
 		switch {
 		case out.New:
 			batch.New++
+			h.metrics.IngestPost(post.Source, "new")
 		case out.Updated:
 			batch.Updated++
+			h.metrics.IngestPost(post.Source, "updated")
 		case out.Duplicate:
 			batch.Duplicate++
+			h.metrics.IngestPost(post.Source, "duplicate")
 		case out.Conflict:
 			batch.Conflict++
+			h.metrics.IngestPost(post.Source, "conflict")
 		}
 	}
 	return batch, http.StatusOK, ""

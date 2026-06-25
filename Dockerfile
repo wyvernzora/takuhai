@@ -20,13 +20,14 @@ COPY . .
 ARG BUILD_DIR=.
 ARG CMD_PKG=./cmd/takuhai
 ARG VERSION=dev
+ARG COMMIT=unknown
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 RUN cd "${BUILD_DIR}" \
     && CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build \
     -trimpath \
-    -ldflags="-s -w -X main.version=${VERSION}" \
+    -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" \
     -o /out/app \
     "${CMD_PKG}"
 

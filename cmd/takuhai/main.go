@@ -33,6 +33,7 @@ import (
 	"github.com/wyvernzora/takuhai/internal/config"
 	"github.com/wyvernzora/takuhai/internal/health"
 	"github.com/wyvernzora/takuhai/internal/mcp"
+	"github.com/wyvernzora/takuhai/internal/metrics"
 	"github.com/wyvernzora/takuhai/internal/rest"
 	"github.com/wyvernzora/takuhai/internal/store/postgres"
 
@@ -42,8 +43,11 @@ import (
 	_ "time/tzdata"
 )
 
-// version is overridable at link time via -ldflags="-X main.version=...".
-var version = "0.1.0"
+// version and commit are overridable at link time via -ldflags.
+var (
+	version = "0.1.0"
+	commit  = "unknown"
+)
 
 func main() {
 	if err := run(); err != nil {
@@ -107,17 +111,18 @@ func run() error {
 	// The single mountable /healthz handler (DB ping only — design §10). Both the HTTP
 	// listener and the MCP server mount the SAME handler.
 	healthz := health.NewHandler(st)
+	metricsSrv := metrics.NewTakuhai(version, commit, st)
 
 	// The consumer-only MCP server (list_releases / resolve_magnets). Its Handler() serves
 	// /mcp + /healthz.
-	mcpSrv := mcp.NewServer(st, healthz)
+	mcpSrv := mcp.NewServerWithMetrics(st, healthz, metricsSrv)
 
 	logger.Info("takuhai starting",
 		"version", version,
 		"addr", cfg.Addr,
 	)
 
-	return runHTTP(ctx, logger, cfg.Addr, st, mcpSrv, healthz)
+	return runHTTP(ctx, logger, cfg.Addr, st, mcpSrv, healthz, metricsSrv)
 }
 
 // runHTTP mounts every HTTP route — /ingest (push), /queue/* + /submit (match loop), /mcp +
@@ -129,18 +134,20 @@ func runHTTP(
 	st *postgres.Store,
 	mcpSrv *mcp.Server,
 	healthz http.Handler,
+	metricsSrv *metrics.Takuhai,
 ) error {
 	mux := http.NewServeMux()
 	// The consumer /mcp endpoint + /healthz (the MCP server owns this mux).
 	mux.Handle("/mcp", mcpSrv.Handler())
 	mux.Handle("/healthz", healthz)
+	mux.Handle("/metrics", metricsSrv.Handler())
 	// The REST push-ingestion and match-loop surfaces.
-	restAPI := rest.New(st)
+	restAPI := rest.NewWithMetrics(st, metricsSrv)
 	mux.Handle("/ingest", restAPI)
 	mux.Handle("/queue/", restAPI)
 	mux.Handle("/submit", restAPI)
 
-	srv := &http.Server{Addr: addr, Handler: mux}
+	srv := &http.Server{Addr: addr, Handler: metricsSrv.HTTP.Wrap(mux)}
 
 	// Bind SYNCHRONOUSLY so a failed bind (e.g. the port is already in use) fails fast:
 	// run() returns the error promptly with a non-zero exit instead of leaving a process

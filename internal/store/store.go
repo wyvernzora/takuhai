@@ -26,6 +26,7 @@ type Store interface {
 	Claim(ctx context.Context, p ClaimParams) (ClaimResult, error)
 	Submit(ctx context.Context, p SubmitParams) error
 	QueueStats(ctx context.Context) (QueueStats, error)
+	CatalogStats(ctx context.Context) (CatalogStats, error)
 	ListReleases(ctx context.Context, q ReleaseQuery) (ReleasePage, error)
 	ResolveMagnets(ctx context.Context, infohashes []string) (map[string]string, error)
 	Close() error
@@ -91,6 +92,12 @@ type QueueStats struct {
 	Matched    int
 	Suppressed int
 	Exhausted  int
+}
+
+type CatalogStats struct {
+	RawPosts   int
+	Infohashes int
+	Refs       int
 }
 
 type ReleaseQuery struct {

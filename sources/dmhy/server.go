@@ -3,6 +3,7 @@ package dmhy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,8 @@ import (
 	"time"
 
 	"golang.org/x/time/rate"
+
+	"github.com/wyvernzora/takuhai/internal/metrics"
 )
 
 // Threshold is the DMHY consecutive-empty end-of-archive threshold N. It is the
@@ -39,6 +42,7 @@ type Server struct {
 	crawler *Crawler
 	limiter *rate.Limiter
 	client  *http.Client
+	metrics *metrics.DMHY
 }
 
 // NewServer constructs the crawl server over a DMHY base URL and a request rate
@@ -48,9 +52,14 @@ type Server struct {
 // fetched from DMHY at most once (<= 0 disables the cache). The threshold is the pinned
 // Threshold const.
 func NewServer(baseURL string, sortID int, ratePerSec float64, cacheTTL time.Duration) *Server {
+	return NewServerWithMetrics(baseURL, sortID, ratePerSec, cacheTTL, nil)
+}
+
+func NewServerWithMetrics(baseURL string, sortID int, ratePerSec float64, cacheTTL time.Duration, m *metrics.DMHY) *Server {
 	s := &Server{
 		baseURL: baseURL,
 		client:  &http.Client{Timeout: 30 * time.Second},
+		metrics: m,
 	}
 	if ratePerSec > 0 {
 		s.limiter = rate.NewLimiter(rate.Limit(ratePerSec), 1)
@@ -61,6 +70,7 @@ func NewServer(baseURL string, sortID int, ratePerSec float64, cacheTTL time.Dur
 	}
 	s.crawler = NewCrawler(fetch, Threshold)
 	s.crawler.sortID = sortID
+	s.crawler.metrics = m
 	return s
 }
 
@@ -83,10 +93,18 @@ func (s *Server) fetchPage(ctx context.Context, sortID, page int) ([]byte, error
 		}
 	}
 
+	start := time.Now()
+	result := "error"
+	defer func() { s.metrics.Fetch(result, time.Since(start)) }()
+
 	target := archivePageURL(s.baseURL, sortID, page)
 
 	if rest, ok := strings.CutPrefix(target, "file://"); ok {
-		return readFileURL(rest)
+		b, err := readFileURL(rest)
+		if err == nil {
+			result = "ok"
+		}
+		return b, err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, http.NoBody)
@@ -105,6 +123,7 @@ func (s *Server) fetchPage(ctx context.Context, sortID, page int) ([]byte, error
 	if err != nil {
 		return nil, fmt.Errorf("dmhy: read body %s: %w", target, err)
 	}
+	result = "ok"
 	return b, nil
 }
 
@@ -113,12 +132,15 @@ func (s *Server) fetchPage(ctx context.Context, sortID, page int) ([]byte, error
 // response. A malformed body / lookback / cursor is a client error (400); a crawl
 // (fetch/parse) failure is 502 — a transient upstream failure, never the archive floor.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
 	if r.Method != http.MethodPost {
+		s.metrics.Crawl("bad_request", 0, time.Since(start))
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var req CrawlRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.metrics.Crawl("bad_request", 0, time.Since(start))
 		http.Error(w, fmt.Sprintf("dmhy: decode /crawl request: %v", err), http.StatusBadRequest)
 		return
 	}
@@ -127,22 +149,32 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// the pre-resolved lookback and never string-parses.
 	lookback, err := parseLookback(req.Lookback)
 	if err != nil {
+		s.metrics.Crawl("bad_request", 0, time.Since(start))
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if _, _, err := parseCursor(req.Cursor); err != nil {
+		s.metrics.Crawl("bad_request", 0, time.Since(start))
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	resp, err := s.crawler.Crawl(r.Context(), req, lookback)
 	if err != nil {
+		result := "fetch_error"
+		if errors.Is(err, errCrawlParse) {
+			result = "parse_error"
+		}
+		s.metrics.Crawl(result, 0, time.Since(start))
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		s.metrics.Crawl("error", len(resp.Posts), time.Since(start))
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
+	s.metrics.Crawl("ok", len(resp.Posts), time.Since(start))
 }
 
 // readFileURL reads a file:// page body for the offline path. A trailing query string

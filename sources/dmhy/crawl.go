@@ -2,11 +2,13 @@ package dmhy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/wyvernzora/takuhai/internal/metrics"
 	"github.com/wyvernzora/takuhai/pkg/rawpost"
 )
 
@@ -57,6 +59,7 @@ type Crawler struct {
 	threshold int
 	sortID    int
 	now       func() time.Time
+	metrics   *metrics.DMHY
 }
 
 // NewCrawler constructs a stateless crawler over a page fetcher and the
@@ -66,6 +69,11 @@ type Crawler struct {
 func NewCrawler(fetch PageFetcher, threshold int) *Crawler {
 	return &Crawler{fetch: fetch, threshold: threshold, sortID: 0, now: time.Now}
 }
+
+var (
+	errCrawlFetch = errors.New("dmhy: crawl fetch")
+	errCrawlParse = errors.New("dmhy: crawl parse")
+)
 
 // Crawl runs one /crawl request. It walks HTML archive pages from the cursor,
 // returning up to pageSize in-window posts (newest → oldest), per the §1 algorithm:
@@ -122,14 +130,15 @@ func (c *Crawler) Crawl(ctx context.Context, req CrawlRequest, lookback time.Dur
 			// A transient fetch failure surfaces verbatim and must NOT look like the floor
 			// nor advance past the failed page (design §1/§5/§8): a retry re-fetches the
 			// SAME page, leaving no permanent gap.
-			return CrawlResponse{}, err
+			return CrawlResponse{}, fmt.Errorf("%w: %w", errCrawlFetch, err)
 		}
 		pagePosts, err := ParseArchivePage(body)
 		if err != nil {
 			// A parse failure is a fetch failure under the §8 contract — surface it, never
 			// treat unparseable bytes as an empty page.
-			return CrawlResponse{}, err
+			return CrawlResponse{}, fmt.Errorf("%w: %w", errCrawlParse, err)
 		}
+		c.metrics.ParsePosts("ok", len(pagePosts))
 
 		if len(pagePosts) == 0 {
 			// Positively-confirmed empty page (200 OK, zero parsed rows). Extend the empty

@@ -11,8 +11,8 @@ go build -o bin/takuhai ./cmd/takuhai
 ./bin/takuhai --addr=:8080
 ```
 
-takuhai serves `/ingest`, `/queue/claim`, `/queue/stats`, `/submit`, `/mcp`, and
-`/healthz`.
+takuhai serves `/ingest`, `/queue/claim`, `/queue/stats`, `/submit`, `/mcp`,
+`/healthz`, and `/metrics`.
 
 The DMHY crawler is separate:
 
@@ -77,6 +77,7 @@ crawler, and the n8n node init image before creating the GitHub release.
 ## Health And Shutdown
 
 - `/healthz` is a live DB ping.
+- `/metrics` exports Prometheus metrics; see [`docs/metrics.md`](metrics.md).
 - Startup fails fast if the HTTP bind fails.
 - SIGTERM drains in-flight HTTP/MCP requests before closing the DB pool.
 - Logs are JSON `slog` on stderr.

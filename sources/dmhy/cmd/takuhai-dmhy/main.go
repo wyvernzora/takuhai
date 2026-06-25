@@ -32,11 +32,15 @@ import (
 	// timezone-dependent parsing works in distroless/scratch images.
 	_ "time/tzdata"
 
+	"github.com/wyvernzora/takuhai/internal/metrics"
 	"github.com/wyvernzora/takuhai/sources/dmhy"
 )
 
-// version is overridable at link time via -ldflags="-X main.version=...".
-var version = "0.1.0"
+// version and commit are overridable at link time via -ldflags.
+var (
+	version = "0.1.0"
+	commit  = "unknown"
+)
 
 func main() {
 	if err := run(os.Args[1:], os.Stdout); err != nil {
@@ -197,11 +201,13 @@ func (c *ServeCmd) Run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	srv := dmhy.NewServer(c.BaseURL, c.SortID, c.RateRPS, c.CacheTTL)
+	metricsSrv := metrics.NewDMHY(version, commit)
+	srv := dmhy.NewServerWithMetrics(c.BaseURL, c.SortID, c.RateRPS, c.CacheTTL, metricsSrv)
 
 	mux := http.NewServeMux()
 	mux.Handle("/crawl", srv)
-	httpSrv := &http.Server{Addr: c.Addr, Handler: mux}
+	mux.Handle("/metrics", metricsSrv.Handler())
+	httpSrv := &http.Server{Addr: c.Addr, Handler: metricsSrv.HTTP.Wrap(mux)}
 
 	logger.Info("takuhai-dmhy starting",
 		"version", version,

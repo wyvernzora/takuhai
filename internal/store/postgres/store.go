@@ -445,6 +445,20 @@ func (s *Store) QueueStats(ctx context.Context) (store.QueueStats, error) {
 	return qs, nil
 }
 
+func (s *Store) CatalogStats(ctx context.Context) (store.CatalogStats, error) {
+	var cs store.CatalogStats
+	err := s.pool.QueryRow(ctx, `
+		SELECT
+			(SELECT count(*) FROM raw_items),
+			(SELECT count(*) FROM releases),
+			(SELECT count(DISTINCT ref) FROM releases WHERE ref IS NOT NULL AND ref <> '')
+	`).Scan(&cs.RawPosts, &cs.Infohashes, &cs.Refs)
+	if err != nil {
+		return store.CatalogStats{}, fmt.Errorf("catalog stats: %w", err)
+	}
+	return cs, nil
+}
+
 func (s *Store) ListReleases(ctx context.Context, q store.ReleaseQuery) (store.ReleasePage, error) {
 	if err := cursor.ValidateRef(q.Ref); err != nil {
 		return store.ReleasePage{}, err

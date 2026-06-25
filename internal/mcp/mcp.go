@@ -9,6 +9,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/wyvernzora/takuhai/internal/dispatch"
+	"github.com/wyvernzora/takuhai/internal/metrics"
 	"github.com/wyvernzora/takuhai/internal/store"
 )
 
@@ -40,6 +41,7 @@ type Server struct {
 	dispatch *dispatch.Dispatcher
 	healthz  http.Handler   // the standalone /healthz handler (design §10/§11) — mounted, not owned
 	sdk      *mcpsdk.Server // the SDK server with the consumer tools registered
+	metrics  *metrics.Takuhai
 }
 
 // NewServer constructs the consumer-only MCP server over the Store seam. The healthz
@@ -48,8 +50,12 @@ type Server struct {
 // single owner of the health contract (design §6/§10). May be nil for wire tests that
 // drive only /mcp tool dispatch.
 func NewServer(s store.Store, healthz http.Handler) *Server {
+	return NewServerWithMetrics(s, healthz, nil)
+}
+
+func NewServerWithMetrics(s store.Store, healthz http.Handler, m *metrics.Takuhai) *Server {
 	d := dispatch.New(s)
-	srv := &Server{dispatch: d, healthz: healthz}
+	srv := &Server{dispatch: d, healthz: healthz, metrics: m}
 	srv.sdk = newSDKServer(srv)
 	return srv
 }
@@ -95,20 +101,39 @@ var objectSchema = json.RawMessage(`{"type":"object"}`)
 // content; on a dispatch error the result is marked IsError with the wire code as the
 // payload, preserving the closed taxonomy over the wire (mirrors the in-process
 // CallTool — design §6).
-func toolHandler(d func(context.Context, []byte) ([]byte, error)) mcpsdk.ToolHandler {
+func toolHandler(name string, m *metrics.Takuhai, d func(context.Context, []byte) ([]byte, error)) mcpsdk.ToolHandler {
 	return func(ctx context.Context, req *mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+		start := time.Now()
 		args := []byte(req.Params.Arguments)
 		if args == nil {
 			args = []byte("{}")
 		}
 		result, err := d(ctx, args)
 		if err != nil {
+			m.MCPTool(name, "error", time.Since(start))
 			return errorResult(err), nil
+		}
+		m.MCPTool(name, "ok", time.Since(start))
+		if name == "resolve_magnets" {
+			m.MCPResolveMagnets(resolveMagnetCounts(args, result))
 		}
 		return &mcpsdk.CallToolResult{
 			Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: string(result)}},
 		}, nil
 	}
+}
+
+func resolveMagnetCounts(args, result []byte) (hits, misses int) {
+	var in dispatch.ResolveMagnetsRequest
+	var out dispatch.ResolveMagnetsResult
+	if json.Unmarshal(args, &in) != nil || json.Unmarshal(result, &out) != nil {
+		return 0, 0
+	}
+	hits = len(out.Magnets)
+	if len(in.Infohashes) > hits {
+		misses = len(in.Infohashes) - hits
+	}
+	return hits, misses
 }
 
 // errorResult shapes a dispatch error into an MCP tool error (IsError true) carrying

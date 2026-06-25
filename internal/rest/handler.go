@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/wyvernzora/takuhai/internal/dispatch"
+	"github.com/wyvernzora/takuhai/internal/metrics"
 	"github.com/wyvernzora/takuhai/internal/store"
 )
 
@@ -15,12 +16,18 @@ type Handler struct {
 	dispatch *dispatch.Dispatcher
 	ingest   ingestStore
 	mux      *http.ServeMux
+	metrics  *metrics.Takuhai
 }
 
 func New(s store.Store) *Handler {
+	return NewWithMetrics(s, nil)
+}
+
+func NewWithMetrics(s store.Store, m *metrics.Takuhai) *Handler {
 	h := &Handler{
 		dispatch: dispatch.New(s),
 		ingest:   s,
+		metrics:  m,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ingest", h.handleIngest)

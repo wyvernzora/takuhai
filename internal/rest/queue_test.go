@@ -38,6 +38,9 @@ func (f *fakeStore) Submit(_ context.Context, p store.SubmitParams) error {
 func (f *fakeStore) QueueStats(context.Context) (store.QueueStats, error) {
 	return store.QueueStats{}, nil
 }
+func (f *fakeStore) CatalogStats(context.Context) (store.CatalogStats, error) {
+	return store.CatalogStats{}, nil
+}
 func (f *fakeStore) ListReleases(context.Context, store.ReleaseQuery) (store.ReleasePage, error) {
 	return store.ReleasePage{}, nil
 }

@@ -47,6 +47,7 @@ or matcher attributes exist in this pass.
 | `GET` | `/queue/stats` | Return queue/status counts, including exhausted. |
 | `POST` | `/submit` | Submit `matched`, `unmatched`, or `suppressed` for a claim. |
 | `GET` | `/healthz` | DB ping. |
+| `GET` | `/metrics` | Prometheus metrics. |
 
 Crawler posts and ingest posts use the same shape:
 

@@ -198,7 +198,7 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
-      # VERSION drives the -ldflags="-X main.version=..." stamp baked into
+      # VERSION and COMMIT drive the ldflags stamp baked into
       # the binary. Tag pushes use the literal tag; main-branch pushes use
       # the short SHA prefixed with "dev-" so the running binary still
       # reports the exact commit it came from.
@@ -246,6 +246,7 @@ jobs:
           # CMD_PKG come from the per-image build_args.
           build-args: |
             VERSION=${{ steps.version.outputs.value }}
+            COMMIT=${{ github.sha }}
             ${{ matrix.build_args }}
           cache-from: type=gha,scope=${{ matrix.component }}
           cache-to: type=gha,mode=max,scope=${{ matrix.component }}

@@ -15,5 +15,5 @@ func addListReleasesTool(srv *mcpsdk.Server, s *Server) {
 		Description: forLLM(toolListReleasesDoc),
 		Annotations: readOnlyToolAnnotations(),
 		InputSchema: objectSchema,
-	}, toolHandler(s.dispatch.ListReleases))
+	}, toolHandler("list_releases", s.metrics, s.dispatch.ListReleases))
 }

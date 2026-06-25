@@ -15,5 +15,5 @@ func addResolveMagnetsTool(srv *mcpsdk.Server, s *Server) {
 		Description: forLLM(toolResolveMagnetsDoc),
 		Annotations: readOnlyToolAnnotations(),
 		InputSchema: objectSchema,
-	}, toolHandler(s.dispatch.ResolveMagnets))
+	}, toolHandler("resolve_magnets", s.metrics, s.dispatch.ResolveMagnets))
 }
