@@ -20,16 +20,17 @@ Operation I/O (the cardinalities differ by design):
   call → one summary item.
 - **Queue → Claim** — manual claim operation; emits one item containing `{items, count}`.
 - **Queue → Submit** — accepts one JSON body: a single disposition object, an array of
-  disposition objects, or one `{items}` batch object; passes the input through and
-  annotates it with the result.
+  disposition objects, one `{items}` batch object, or structured-output `{output:{items}}`;
+  emits `{items:[{infohash, ok, error?}], count}`. HTTP 409 conflicts become per-item
+  `{ok:false,error:"conflict"}` results; other errors still fail the node.
 - **Queue → Get Queue Stats** — one stats item.
 - **Crawler → Crawl** — one item = the page `{posts, next_cursor, has_more}`.
 - **Takuhai Trigger** — claims on each poll and emits one item containing
   `{items, count}` so one AI agent call can handle the whole batch.
 
-Responses are returned **in full** — each node passes the endpoint's envelope through
-verbatim (Claim emits the whole `ClaimItemResult`; Ingest the whole summary), so a new
-server field flows through without a node change.
+Claim and Ingest return endpoint envelopes in full so new server fields flow through
+without a node change. Submit returns a compact per-disposition result because `/submit`
+only returns `{"ok":true}`.
 
 ### The opaque-shuttle principle
 

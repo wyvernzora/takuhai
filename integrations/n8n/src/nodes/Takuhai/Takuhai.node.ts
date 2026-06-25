@@ -95,7 +95,8 @@ export class Takuhai implements INodeType {
 				type: 'json',
 				default: '={{ $json }}',
 				required: true,
-				description: 'A single /submit body, an array of /submit bodies, or an object with items containing /submit bodies',
+				description:
+					'A single /submit body, an array of /submit bodies, an object with items, or a structured-output object with output.items',
 				displayOptions: { show: { resource: ['queue'], operation: ['submit'] } },
 			},
 		],
@@ -141,21 +142,12 @@ export class Takuhai implements INodeType {
 				}
 
 				const payload = submitPayload(this.getNodeParameter('body', i));
-				if (payload.batch) {
-					const submitted: IDataObject[] = [];
-					for (const body of payload.bodies) {
-						submitted.push(await call('POST', '/submit', body));
-					}
-					out.push({
-						json: { ...items[i].json, takuhai: { items: submitted, count: submitted.length } },
-						pairedItem: { item: i },
-					});
-					continue;
+				const submitted: IDataObject[] = [];
+				for (const body of payload.bodies) {
+					submitted.push(await submitOne(call, body));
 				}
-
-				const res = await call('POST', '/submit', payload.bodies[0]);
 				out.push({
-					json: { ...items[i].json, takuhai: res },
+					json: { items: submitted, count: submitted.length },
 					pairedItem: { item: i },
 				});
 			} catch (error) {
@@ -170,19 +162,33 @@ export class Takuhai implements INodeType {
 	}
 }
 
-function submitPayload(input: unknown): { bodies: IDataObject[]; batch: boolean } {
+type HTTPCall = (method: IHttpRequestMethods, path: string, body?: IDataObject) => Promise<IDataObject>;
+
+async function submitOne(call: HTTPCall, body: IDataObject): Promise<IDataObject> {
+	try {
+		await call('POST', '/submit', body);
+		return { infohash: submitInfohash(body), ok: true };
+	} catch (error) {
+		if (statusCode(error) === 409) {
+			return { infohash: submitInfohash(body), ok: false, error: 'conflict' };
+		}
+		throw error;
+	}
+}
+
+function submitPayload(input: unknown): { bodies: IDataObject[] } {
 	if (typeof input === 'string') {
 		return submitPayload(JSON.parse(input));
 	}
 	if (Array.isArray(input)) {
-		return { bodies: input.map(asSubmitObject), batch: true };
+		return { bodies: input.map(asSubmitObject) };
 	}
 	const body = asSubmitObject(input);
-	const batch = body.items;
-	if (Array.isArray(batch)) {
-		return { bodies: batch.map(asSubmitObject), batch: true };
+	const items = body.items ?? outputItems(body);
+	if (Array.isArray(items)) {
+		return { bodies: items.map(asSubmitObject) };
 	}
-	return { bodies: [body], batch: false };
+	return { bodies: [body] };
 }
 
 function asSubmitObject(input: unknown): IDataObject {
@@ -190,4 +196,32 @@ function asSubmitObject(input: unknown): IDataObject {
 		return input as IDataObject;
 	}
 	throw new Error('Submit body must be an object, an array of objects, or an object with items');
+}
+
+function outputItems(body: IDataObject): unknown {
+	const output = body.output;
+	if (output && typeof output === 'object' && !Array.isArray(output)) {
+		return (output as IDataObject).items;
+	}
+	return undefined;
+}
+
+function submitInfohash(body: IDataObject): string {
+	const infohash = body.infohash;
+	return typeof infohash === 'string' ? infohash : '';
+}
+
+function statusCode(error: unknown): number | undefined {
+	if (!error || typeof error !== 'object') return undefined;
+	const err = error as IDataObject;
+	const response = err.response;
+	const nested = response && typeof response === 'object' && !Array.isArray(response) ? (response as IDataObject) : {};
+	for (const value of [err.statusCode, err.httpCode, nested.statusCode, nested.status]) {
+		if (typeof value === 'number') return value;
+		if (typeof value === 'string') {
+			const parsed = Number.parseInt(value, 10);
+			if (!Number.isNaN(parsed)) return parsed;
+		}
+	}
+	return undefined;
 }
