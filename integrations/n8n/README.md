@@ -12,19 +12,20 @@ and submit matcher results.
 |---|---|---|---|
 | **Takuhai** | action | Takuhai API | The takuhai service surface. Resource **Ingest** (push posts) or **Queue** (claim / submit / queue stats). |
 | **Takuhai Crawler** | action | Takuhai Crawler API | Generic `POST /crawl` against *any* takuhai-shaped crawler (DMHY first). One node, one credential per crawler. |
-| **Takuhai Trigger** | trigger | Takuhai API | Polls `/queue/claim` and emits claimed releases. |
+| **Takuhai Trigger** | trigger | Takuhai API | Polls `/queue/claim` and emits one batch item of claimed releases. |
 
 Operation I/O (the cardinalities differ by design):
 
 - **Ingest → Ingest Posts** — forwards the page's `posts` blob as one batched `/ingest`
   call → one summary item.
-- **Queue → Claim** — manual claim operation; **fans out** one output item per claimed
-  release.
-- **Queue → Submit** — per input item; **passes the item through** and annotates it with
-  the result.
+- **Queue → Claim** — manual claim operation; emits one item containing `{items, count}`.
+- **Queue → Submit** — accepts one JSON body: a single disposition object, an array of
+  disposition objects, or one `{items}` batch object; passes the input through and
+  annotates it with the result.
 - **Queue → Get Queue Stats** — one stats item.
 - **Crawler → Crawl** — one item = the page `{posts, next_cursor, has_more}`.
-- **Takuhai Trigger** — claims on each poll and emits one item per claimed release.
+- **Takuhai Trigger** — claims on each poll and emits one item containing
+  `{items, count}` so one AI agent call can handle the whole batch.
 
 Responses are returned **in full** — each node passes the endpoint's envelope through
 verbatim (Claim emits the whole `ClaimItemResult`; Ingest the whole summary), so a new
@@ -36,9 +37,9 @@ n8n is **transport**, not a participant in the data. The `posts` payload (and th
 `raw_items` evidence the matcher reads) is a sealed contract between the crawler and
 takuhai — n8n forwards it verbatim and never models a `RawPost`. The only fields n8n
 actually *speaks* are the control/fencing ones: `claim_token`, `infohash`, the crawler
-`next_cursor`/`has_more`, and the queue counts — plus the matcher's verdict it
-maps into `status`. So these nodes pin to the **endpoint envelopes**, not the data
-schema: a new `RawPost` field changes nothing here.
+`next_cursor`/`has_more`, and the queue counts. The matcher produces the submit body
+as JSON. So these nodes pin to the **endpoint envelopes**, not the data schema: a new
+`RawPost` field changes nothing here.
 
 ### Example: backfill loop
 
@@ -51,7 +52,7 @@ Loop ─► Takuhai Crawler (cursor = prev next_cursor)
 ### Example: match loop
 
 ```
-Takuhai Trigger ─► [matcher] ─► Takuhai · Submit
+Takuhai Trigger ─► [matcher over $json.items] ─► Takuhai · Submit
 ```
 
 ## Packaging & deployment

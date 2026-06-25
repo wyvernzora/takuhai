@@ -10,8 +10,8 @@ const CRED = 'takuhaiApi';
 
 /**
  * Takuhai Trigger — polls by claiming queue work. It stays idle when no work is
- * claimable and emits one item per claimed release when work exists. The poll schedule
- * comes from n8n's standard polling UI.
+ * claimable and emits one batch item when work exists. The poll schedule comes from
+ * n8n's standard polling UI.
  */
 export class TakuhaiTrigger implements INodeType {
 	description: INodeTypeDescription = {
@@ -65,6 +65,6 @@ export class TakuhaiTrigger implements INodeType {
 			return null;
 		}
 
-		return [this.helpers.returnJsonArray(claimed)];
+		return [[{ json: { items: claimed, count: claimed.length } }]];
 	}
 }

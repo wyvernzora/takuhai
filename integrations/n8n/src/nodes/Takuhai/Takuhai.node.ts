@@ -90,58 +90,12 @@ export class Takuhai implements INodeType {
 				displayOptions: { show: { resource: ['queue'], operation: ['claim'] } },
 			},
 			{
-				displayName: 'Infohash',
-				name: 'infohash',
-				type: 'string',
-				default: '={{ $json.infohash }}',
+				displayName: 'Body',
+				name: 'body',
+				type: 'json',
+				default: '={{ $json }}',
 				required: true,
-				description: 'The release infohash (40-hex v1 btih)',
-				displayOptions: { show: { resource: ['queue'], operation: ['submit'] } },
-			},
-			{
-				displayName: 'Claim Token',
-				name: 'claim_token',
-				type: 'number',
-				default: '={{ $json.claim_token }}',
-				required: true,
-				description: 'Per-claim fencing token returned by Claim',
-				displayOptions: { show: { resource: ['queue'], operation: ['submit'] } },
-			},
-			{
-				displayName: 'Status',
-				name: 'status',
-				type: 'options',
-				options: [
-					{ name: 'Matched', value: 'matched' },
-					{ name: 'Unmatched', value: 'unmatched' },
-					{ name: 'Suppressed', value: 'suppressed' },
-				],
-				default: 'matched',
-				required: true,
-				displayOptions: { show: { resource: ['queue'], operation: ['submit'] } },
-			},
-			{
-				displayName: 'Ref',
-				name: 'ref',
-				type: 'string',
-				default: '',
-				placeholder: 'tvdb:12345',
-				description: 'Opaque canonical ref; required for matched',
-				displayOptions: { show: { resource: ['queue'], operation: ['submit'], status: ['matched'] } },
-			},
-			{
-				displayName: 'Confidence',
-				name: 'confidence',
-				type: 'number',
-				typeOptions: { minValue: 0, maxValue: 1, numberPrecision: 3 },
-				default: 0.9,
-				displayOptions: { show: { resource: ['queue'], operation: ['submit'], status: ['matched'] } },
-			},
-			{
-				displayName: 'Reason',
-				name: 'reason',
-				type: 'string',
-				default: '',
+				description: 'A single /submit body, an array of /submit bodies, or an object with items containing /submit bodies',
 				displayOptions: { show: { resource: ['queue'], operation: ['submit'] } },
 			},
 		],
@@ -173,7 +127,7 @@ export class Takuhai implements INodeType {
 				lease_seconds: this.getNodeParameter('lease_seconds', 0),
 			});
 			const claimed = (res.items as IDataObject[]) ?? [];
-			return [claimed.map((r) => ({ json: r }))];
+			return [[{ json: { items: claimed, count: claimed.length } }]];
 		}
 
 		const out: INodeExecutionData[] = [];
@@ -186,8 +140,20 @@ export class Takuhai implements INodeType {
 					continue;
 				}
 
-				const body = submitBody(this, i);
-				const res = await call('POST', '/submit', body);
+				const payload = submitPayload(this.getNodeParameter('body', i));
+				if (payload.batch) {
+					const submitted: IDataObject[] = [];
+					for (const body of payload.bodies) {
+						submitted.push(await call('POST', '/submit', body));
+					}
+					out.push({
+						json: { ...items[i].json, takuhai: { items: submitted, count: submitted.length } },
+						pairedItem: { item: i },
+					});
+					continue;
+				}
+
+				const res = await call('POST', '/submit', payload.bodies[0]);
 				out.push({
 					json: { ...items[i].json, takuhai: res },
 					pairedItem: { item: i },
@@ -204,18 +170,24 @@ export class Takuhai implements INodeType {
 	}
 }
 
-function submitBody(ctx: IExecuteFunctions, i: number): IDataObject {
-	const status = ctx.getNodeParameter('status', i) as string;
-	const body: IDataObject = {
-		infohash: ctx.getNodeParameter('infohash', i),
-		claim_token: ctx.getNodeParameter('claim_token', i),
-		status,
-	};
-	if (status === 'matched') {
-		body.ref = ctx.getNodeParameter('ref', i);
-		body.confidence = ctx.getNodeParameter('confidence', i);
+function submitPayload(input: unknown): { bodies: IDataObject[]; batch: boolean } {
+	if (typeof input === 'string') {
+		return submitPayload(JSON.parse(input));
 	}
-	const reason = ctx.getNodeParameter('reason', i, '') as string;
-	if (reason) body.reason = reason;
-	return body;
+	if (Array.isArray(input)) {
+		return { bodies: input.map(asSubmitObject), batch: true };
+	}
+	const body = asSubmitObject(input);
+	const batch = body.items;
+	if (Array.isArray(batch)) {
+		return { bodies: batch.map(asSubmitObject), batch: true };
+	}
+	return { bodies: [body], batch: false };
+}
+
+function asSubmitObject(input: unknown): IDataObject {
+	if (input && typeof input === 'object' && !Array.isArray(input)) {
+		return input as IDataObject;
+	}
+	throw new Error('Submit body must be an object, an array of objects, or an object with items');
 }
