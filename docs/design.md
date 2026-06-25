@@ -30,7 +30,7 @@ The schema has three tables:
 
 Release statuses are deliberately small:
 
-- `unmatched`: not matched yet and claimable when not leased and under the attempt cap.
+- `unmatched`: not matched yet and claimable when not leased and under the failed-attempt cap.
 - `matched`: matched to a canonical ref the user cares about.
 - `suppressed`: not wanted, matched or not.
 - `exhausted`: too many failed attempts; no longer offered as work.
@@ -81,15 +81,15 @@ text.
 
 ## Queue Semantics
 
-Claiming an item increments `attempt_count`, stamps `claimed_at`, sets
-`lease_expires_at`, and bumps `claim_token`. A matching submit must echo the current
-token.
+Claiming an item stamps `claimed_at`, sets `lease_expires_at`, and bumps
+`claim_token`. A matching submit must echo the current token.
 
 Submitting `matched` or `suppressed` clears the lease and makes the status terminal.
-Submitting `unmatched` keeps the lease in place; the timeout is the retry mechanic.
-When the configured attempt cap is reached, an unmatched result becomes `exhausted`.
-Expired unmatched rows at or above the cap are marked exhausted before new claims are
-offered.
+Submitting `unmatched` increments `attempt_count` and keeps the lease in place; the
+timeout is the retry mechanic. When the configured failed-attempt cap is reached, an
+unmatched result becomes `exhausted`. Expired unmatched rows at or above the cap are
+marked exhausted before new claims are offered. Claim crashes do not increment
+`attempt_count`.
 
 ## MCP API
 

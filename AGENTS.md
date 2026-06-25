@@ -119,3 +119,5 @@ corrects your approach, append a one-line, concrete rule here before ending the 
   fail-fast bind, the graceful-drain order — are invisible to it. Validate the binary
   end-to-end with the real-binary smoke (`go test -tags=smoke -run TestSmoke
   ./cmd/takuhai`), not the conformance gate alone.
+- `attempt_count` means failed unmatched submissions, not claims; claim crashes must
+  not affect matching semantics.

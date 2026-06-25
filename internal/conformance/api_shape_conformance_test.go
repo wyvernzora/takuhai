@@ -106,6 +106,9 @@ func TestAPIShape_StaleClaimTokenRejected(t *testing.T) {
 	if first.ClaimToken == second.ClaimToken {
 		t.Fatalf("claim token did not change: %d", first.ClaimToken)
 	}
+	if first.AttemptCount != 0 || second.AttemptCount != 0 {
+		t.Fatalf("claim crash changed attempt counts: first=%d second=%d, want both 0", first.AttemptCount, second.AttemptCount)
+	}
 	err := st.Submit(ctx, store.SubmitParams{
 		Infohash:   apiIH1,
 		ClaimToken: first.ClaimToken,
@@ -126,6 +129,9 @@ func TestAPIShape_UnmatchedExhaustsAfterMaxAttempts(t *testing.T) {
 
 	for i := 0; i < 3; i++ {
 		claimed := claimOne(t, ctx, st, 60)
+		if claimed.AttemptCount != i {
+			t.Fatalf("claim attempt_count before submit = %d, want %d", claimed.AttemptCount, i)
+		}
 		if err := st.Submit(ctx, store.SubmitParams{
 			Infohash:   apiIH1,
 			ClaimToken: claimed.ClaimToken,

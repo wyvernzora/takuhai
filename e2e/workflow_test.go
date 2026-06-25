@@ -281,8 +281,8 @@ func claimOne(t *testing.T, takuhaiURL, wantInfohash string, leaseSeconds int) i
 	if item.Infohash != wantInfohash {
 		t.Fatalf("claimed infohash = %s, want %s", item.Infohash, wantInfohash)
 	}
-	if item.ClaimToken == 0 || item.AttemptCount == 0 {
-		t.Fatalf("claimed item = %+v, want token and attempt", item)
+	if item.ClaimToken == 0 {
+		t.Fatalf("claimed item = %+v, want token", item)
 	}
 	if len(item.RawItems) != 1 || item.RawItems[0].Source != rawpost.SourceDMHY || item.RawItems[0].Title == "" {
 		t.Fatalf("claimed raw items = %+v, want crawled DMHY evidence", item.RawItems)

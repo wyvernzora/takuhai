@@ -58,7 +58,7 @@ func run() error {
 		addr             = stringFlag("addr", "TAKUHAI_ADDR", ":8080", "listen address")
 		databaseURL      = stringFlag("database-url", "TAKUHAI_DATABASE_URL", "", "PostgreSQL connection string")
 		logLevel         = stringFlag("log-level", "TAKUHAI_LOG_LEVEL", "info", "log level: debug, info, warn, error")
-		queueMaxAttempts = intFlag("queue-max-attempts", "TAKUHAI_QUEUE_MAX_ATTEMPTS", 3, "max claim attempts before a release becomes exhausted")
+		queueMaxAttempts = intFlag("queue-max-attempts", "TAKUHAI_QUEUE_MAX_ATTEMPTS", 3, "max unmatched submits before a release becomes exhausted")
 	)
 	flag.Parse()
 

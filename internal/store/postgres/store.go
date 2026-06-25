@@ -221,7 +221,6 @@ func (s *Store) Claim(ctx context.Context, p store.ClaimParams) (store.ClaimResu
 			UPDATE releases r SET
 				claimed_at = $1,
 				lease_expires_at = $3,
-				attempt_count = r.attempt_count + 1,
 				claim_token = r.claim_token + 1,
 				updated_at = $1
 			FROM claimable c
@@ -328,9 +327,13 @@ func (s *Store) Submit(ctx context.Context, p store.SubmitParams) error { //noli
 		return fmt.Errorf("submit %s: %w", p.Infohash, store.ErrNoActiveLease)
 	}
 
+	newAttemptCount := attemptCount
+	if p.Status == "unmatched" {
+		newAttemptCount++
+	}
 	finalStatus := p.Status
 	clearLease := p.Status == "matched" || p.Status == "suppressed"
-	if p.Status == "unmatched" && attemptCount >= s.cfg.QueueMaxAttempts {
+	if p.Status == "unmatched" && newAttemptCount >= s.cfg.QueueMaxAttempts {
 		finalStatus = "exhausted"
 		clearLease = true
 	}
@@ -352,17 +355,21 @@ func (s *Store) Submit(ctx context.Context, p store.SubmitParams) error { //noli
 		_, err = tx.Exec(ctx, `
 			UPDATE releases SET
 				match_status = $2,
+				attempt_count = $3,
 				ref = NULL,
 				confidence = NULL,
 				claimed_at = NULL,
 				lease_expires_at = NULL,
-				updated_at = $3
+				updated_at = $4
 			WHERE infohash = $1
-		`, p.Infohash, finalStatus, now)
+		`, p.Infohash, finalStatus, newAttemptCount, now)
 	case "unmatched":
 		_, err = tx.Exec(ctx, `
-			UPDATE releases SET updated_at = $2 WHERE infohash = $1
-		`, p.Infohash, now)
+			UPDATE releases SET
+				attempt_count = $2,
+				updated_at = $3
+			WHERE infohash = $1
+		`, p.Infohash, newAttemptCount, now)
 	default:
 		return fmt.Errorf("submit: invalid status %q", p.Status)
 	}

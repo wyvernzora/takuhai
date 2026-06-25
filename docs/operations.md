@@ -30,7 +30,7 @@ Every service flag honors a `TAKUHAI_` environment fallback.
 | `--addr` | `TAKUHAI_ADDR` | `:8080` | HTTP listen address |
 | `--database-url` | `TAKUHAI_DATABASE_URL` | unset | PostgreSQL URL; required |
 | `--log-level` | `TAKUHAI_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
-| `--queue-max-attempts` | `TAKUHAI_QUEUE_MAX_ATTEMPTS` | `3` | Attempts before `exhausted` |
+| `--queue-max-attempts` | `TAKUHAI_QUEUE_MAX_ATTEMPTS` | `3` | Failed unmatched submits before `exhausted` |
 
 The crawler uses `TAKUHAI_DMHY_` variables for its own flags (`--addr`,
 `--dmhy-base-url`, `--sort-id`, `--rate-rps`, `--cache-ttl`, `--log-level`).
