@@ -1,7 +1,7 @@
 {
   "name": "n8n-nodes-takuhai",
   "version": "0.0.0",
-  "description": "n8n nodes for takuhai — drive ingest, the worker match loop, and any takuhai-shaped crawler.",
+  "description": "n8n nodes for takuhai — drive ingest, the queue match loop, and any takuhai-shaped crawler.",
   "keywords": ["n8n-community-node-package", "takuhai", "anime"],
   "license": "MIT",
   "packageManager": "pnpm@10.6.5",
@@ -26,6 +26,7 @@
     "nodes": [
       "dist/nodes/Takuhai/Takuhai.node.js",
       "dist/nodes/TakuhaiCrawler/TakuhaiCrawler.node.js",
+      "dist/nodes/TakuhaiCrawlerTrigger/TakuhaiCrawlerTrigger.node.js",
       "dist/nodes/TakuhaiTrigger/TakuhaiTrigger.node.js"
     ]
   },

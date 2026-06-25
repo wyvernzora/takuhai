@@ -58,7 +58,7 @@ export class Takuhai implements INodeType {
 				displayOptions: { show: { resource: ['queue'] } },
 				options: [
 					{ name: 'Claim', value: 'claim', action: 'Claim a batch of releases' },
-					{ name: 'Submit', value: 'submit', action: 'Submit a matcher result' },
+					{ name: 'Submit Dispositions', value: 'submit', action: 'Submit disposition results' },
 					{ name: 'Get Queue Stats', value: 'queueStats', action: 'Read the queue counts' },
 				],
 				default: 'claim',

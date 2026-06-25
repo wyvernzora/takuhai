@@ -11,21 +11,24 @@ and submit matcher results.
 | Node | Kind | Credential | What it does |
 |---|---|---|---|
 | **Takuhai** | action | Takuhai API | The takuhai service surface. Resource **Ingest** (push posts) or **Queue** (claim / submit / queue stats). |
-| **Takuhai Crawler** | action | Takuhai Crawler API | Generic `POST /crawl` against *any* takuhai-shaped crawler (DMHY first). One node, one credential per crawler. |
-| **Takuhai Trigger** | trigger | Takuhai API | Polls `/queue/claim` and emits one batch item of claimed releases. |
+| **Takuhai Crawler** | action + trigger | Takuhai Crawler API | Generic `POST /crawl` action plus a polling trigger that stores cursor/watermark state in n8n and emits one batch item only when new posts exist. |
+| **Takuhai Queue Trigger** | trigger | Takuhai API | Polls `/queue/claim` and emits one batch item of claimed releases. |
 
 Operation I/O (the cardinalities differ by design):
 
 - **Ingest → Ingest Posts** — forwards the page's `posts` blob as one batched `/ingest`
   call → one summary item.
 - **Queue → Claim** — manual claim operation; emits one item containing `{items, count}`.
-- **Queue → Submit** — accepts one JSON body: a single disposition object, an array of
+- **Queue → Submit Dispositions** — accepts one JSON body: a single disposition object, an array of
   disposition objects, one `{items}` batch object, or structured-output `{output:{items}}`;
   emits `{items:[{infohash, ok, error?}], count}`. HTTP 409 conflicts become per-item
   `{ok:false,error:"conflict"}` results; other errors still fail the node.
 - **Queue → Get Queue Stats** — one stats item.
 - **Crawler → Crawl** — one item = the page `{posts, next_cursor, has_more}`.
-- **Takuhai Trigger** — claims on each poll and emits one item containing
+- **Crawler trigger** — keeps a node-local crawl watermark and emits one
+  `{posts, count}` item when new posts exist. The reset option clears its saved cursor
+  and watermark for one-off recovery/backfill.
+- **Takuhai Queue Trigger** — claims on each poll and emits one item containing
   `{items, count}` so one AI agent call can handle the whole batch.
 
 Claim and Ingest return endpoint envelopes in full so new server fields flow through
@@ -50,10 +53,16 @@ Loop ─► Takuhai Crawler (cursor = prev next_cursor)
      ─► IF has_more is false: stop, else set cursor = next_cursor and loop
 ```
 
+### Example: steady crawl
+
+```
+Takuhai Crawler trigger ─► Takuhai · Ingest (Posts = {{$json.posts}})
+```
+
 ### Example: match loop
 
 ```
-Takuhai Trigger ─► [matcher over $json.items] ─► Takuhai · Submit
+Takuhai Queue Trigger ─► [matcher over $json.items] ─► Takuhai · Submit Dispositions
 ```
 
 ## Packaging & deployment
@@ -84,7 +93,7 @@ corepack pnpm install --frozen-lockfile
 corepack pnpm build            # tsc → dist/ + node icon
 ```
 
-All three nodes share one icon —
+All nodes and credentials share one icon —
 [`docs/assets/logo-n8n.svg`](../../docs/assets/logo-n8n.svg). The build copies it into
 each compiled node dir and credentials dir. The container image builds from the repo
 root so that asset is in scope.
