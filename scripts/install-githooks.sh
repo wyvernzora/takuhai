@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-git config core.hooksPath .githooks
-echo "Configured Git to use .githooks for this checkout."
+if ! command -v lefthook >/dev/null 2>&1; then
+	echo "lefthook not found. Install it first: https://lefthook.dev/installation/" >&2
+	exit 127
+fi
+
+git config --unset core.hooksPath >/dev/null 2>&1 || true
+lefthook install

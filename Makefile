@@ -73,6 +73,6 @@ devserver:
 smoke:
 	go test -tags=smoke -run TestSmoke -count=1 ./cmd/takuhai
 
-# Point this checkout's Git at the tracked hooks in .githooks/.
+# Install lefthook-managed commit-msg and pre-commit hooks.
 hooks:
 	./scripts/install-githooks.sh
