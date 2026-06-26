@@ -2,11 +2,13 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/wyvernzora/takuhai/internal/cursor"
 	"github.com/wyvernzora/takuhai/internal/store"
 )
 
@@ -47,6 +49,58 @@ func TestToolsAdvertiseEmbeddedDocs(t *testing.T) {
 			t.Fatalf("%s description missing %q:\n%s", name, want, got)
 		}
 	}
+}
+
+func TestToolsAdvertiseTypedInputSchemas(t *testing.T) {
+	session := newTestMCPSession(t)
+	res, err := session.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+
+	schemas := map[string]map[string]any{}
+	for _, tool := range res.Tools {
+		b, err := json.Marshal(tool.InputSchema)
+		if err != nil {
+			t.Fatalf("marshal %s schema: %v", tool.Name, err)
+		}
+		var schema map[string]any
+		if err := json.Unmarshal(b, &schema); err != nil {
+			t.Fatalf("decode %s schema: %v", tool.Name, err)
+		}
+		schemas[tool.Name] = schema
+	}
+
+	assertRequiredProperty(t, schemas["list_releases"], "ref")
+	assertOptionalProperty(t, schemas["list_releases"], "limit")
+	assertOptionalProperty(t, schemas["list_releases"], "cursor")
+	assertRequiredProperty(t, schemas["resolve_magnets"], "infohashes")
+}
+
+func TestListReleasesPreservesTaxonomyErrors(t *testing.T) {
+	session := newTestMCPSession(t)
+	res, err := session.CallTool(context.Background(), &mcpsdk.CallToolParams{
+		Name:      "list_releases",
+		Arguments: map[string]any{"ref": "not-a-ref"},
+	})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("IsError = false, content = %v", res.Content)
+	}
+	if got := firstText(res); !strings.Contains(got, `"code":"invalid_ref"`) {
+		t.Fatalf("error content = %s, want invalid_ref code", got)
+	}
+}
+
+func firstText(res *mcpsdk.CallToolResult) string {
+	for _, c := range res.Content {
+		if tc, ok := c.(*mcpsdk.TextContent); ok {
+			return tc.Text
+		}
+	}
+	return ""
 }
 
 func TestForLLMStripsHumanOnlySchemaBlocks(t *testing.T) {
@@ -105,6 +159,38 @@ func newTestMCPSession(t *testing.T) *mcpsdk.ClientSession {
 	return clientSession
 }
 
+func assertRequiredProperty(t *testing.T, schema map[string]any, name string) {
+	t.Helper()
+	assertProperty(t, schema, name)
+	for _, v := range schema["required"].([]any) {
+		if v == name {
+			return
+		}
+	}
+	t.Fatalf("schema required = %v, missing %q", schema["required"], name)
+}
+
+func assertOptionalProperty(t *testing.T, schema map[string]any, name string) {
+	t.Helper()
+	assertProperty(t, schema, name)
+	for _, v := range schema["required"].([]any) {
+		if v == name {
+			t.Fatalf("schema required = %v, want %q optional", schema["required"], name)
+		}
+	}
+}
+
+func assertProperty(t *testing.T, schema map[string]any, name string) {
+	t.Helper()
+	if schema["type"] != "object" {
+		t.Fatalf("schema type = %v, want object", schema["type"])
+	}
+	props := schema["properties"].(map[string]any)
+	if _, ok := props[name]; !ok {
+		t.Fatalf("schema properties = %v, missing %q", props, name)
+	}
+}
+
 type fakeStore struct{}
 
 func (f *fakeStore) Ping(context.Context) error { return nil }
@@ -121,7 +207,10 @@ func (f *fakeStore) QueueStats(context.Context) (store.QueueStats, error) {
 func (f *fakeStore) CatalogStats(context.Context) (store.CatalogStats, error) {
 	return store.CatalogStats{}, nil
 }
-func (f *fakeStore) ListReleases(context.Context, store.ReleaseQuery) (store.ReleasePage, error) {
+func (f *fakeStore) ListReleases(_ context.Context, q store.ReleaseQuery) (store.ReleasePage, error) {
+	if err := cursor.ValidateRef(q.Ref); err != nil {
+		return store.ReleasePage{}, err
+	}
 	return store.ReleasePage{}, nil
 }
 func (f *fakeStore) ResolveMagnets(context.Context, []string) (map[string]string, error) {

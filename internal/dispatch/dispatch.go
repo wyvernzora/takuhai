@@ -64,10 +64,10 @@ type QueueStatsResult struct {
 }
 
 type ListReleasesRequest struct {
-	Ref    string     `json:"ref"`
-	Since  *time.Time `json:"since"`
-	Limit  int        `json:"limit"`
-	Cursor string     `json:"cursor"`
+	Ref    string     `json:"ref" jsonschema:"opaque metadata ref in namespace:value form"`
+	Since  *time.Time `json:"since,omitempty" jsonschema:"RFC3339 timestamp; when present, page by first matched time"`
+	Limit  int        `json:"limit,omitempty" jsonschema:"maximum releases to return; server defaults and caps apply"`
+	Cursor string     `json:"cursor,omitempty" jsonschema:"opaque next_cursor from the previous response"`
 }
 
 type ReleaseItemResult struct {
@@ -81,7 +81,7 @@ type ReleaseItemResult struct {
 
 type ListReleasesResult struct {
 	Releases   []ReleaseItemResult `json:"releases"`
-	NextCursor *string             `json:"next_cursor"`
+	NextCursor *string             `json:"next_cursor,omitempty"`
 }
 
 type ResolveMagnetsRequest struct {
@@ -194,6 +194,14 @@ func (d *Dispatcher) ListReleases(ctx context.Context, input []byte) ([]byte, er
 	if err := json.Unmarshal(input, &req); err != nil {
 		return nil, err
 	}
+	out, err := d.ListReleasesTyped(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(out)
+}
+
+func (d *Dispatcher) ListReleasesTyped(ctx context.Context, req ListReleasesRequest) (ListReleasesResult, error) {
 	page, err := d.store.ListReleases(ctx, store.ReleaseQuery{
 		Ref:    req.Ref,
 		Since:  req.Since,
@@ -201,7 +209,7 @@ func (d *Dispatcher) ListReleases(ctx context.Context, input []byte) ([]byte, er
 		Cursor: req.Cursor,
 	})
 	if err != nil {
-		return nil, err
+		return ListReleasesResult{}, err
 	}
 	out := ListReleasesResult{Releases: make([]ReleaseItemResult, 0, len(page.Releases))}
 	for _, r := range page.Releases {
@@ -218,7 +226,7 @@ func (d *Dispatcher) ListReleases(ctx context.Context, input []byte) ([]byte, er
 		nc := page.NextCursor
 		out.NextCursor = &nc
 	}
-	return json.Marshal(out)
+	return out, nil
 }
 
 func (d *Dispatcher) ResolveMagnets(ctx context.Context, input []byte) ([]byte, error) {
@@ -226,14 +234,22 @@ func (d *Dispatcher) ResolveMagnets(ctx context.Context, input []byte) ([]byte, 
 	if err := json.Unmarshal(input, &req); err != nil {
 		return nil, err
 	}
-	magnets, err := d.store.ResolveMagnets(ctx, req.Infohashes)
+	out, err := d.ResolveMagnetsTyped(ctx, req)
 	if err != nil {
 		return nil, err
+	}
+	return json.Marshal(out)
+}
+
+func (d *Dispatcher) ResolveMagnetsTyped(ctx context.Context, req ResolveMagnetsRequest) (ResolveMagnetsResult, error) {
+	magnets, err := d.store.ResolveMagnets(ctx, req.Infohashes)
+	if err != nil {
+		return ResolveMagnetsResult{}, err
 	}
 	if magnets == nil {
 		magnets = map[string]string{}
 	}
-	return json.Marshal(ResolveMagnetsResult{Magnets: magnets})
+	return ResolveMagnetsResult{Magnets: magnets}, nil
 }
 
 func WireCode(err error) string {

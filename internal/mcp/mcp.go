@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -86,54 +85,6 @@ func readOnlyToolAnnotations() *mcpsdk.ToolAnnotations {
 		IdempotentHint:  true,
 		OpenWorldHint:   &trueVal,
 	}
-}
-
-// objectSchema is the permissive {"type":"object"} input schema the low-level
-// Server.AddTool requires. The dispatch funcs own input validation (they unmarshal and
-// shape-check the raw JSON themselves), so the wire schema is intentionally open — the
-// closed taxonomy (invalid_ref / invalid_cursor) is raised by dispatch, not by schema
-// validation.
-var objectSchema = json.RawMessage(`{"type":"object"}`)
-
-// toolHandler adapts a dispatch entrypoint (raw JSON in → raw JSON out, a returned
-// error carrying a closed-taxonomy wire code via dispatch.WireCode) into the SDK's
-// low-level ToolHandler. On success the JSON result is returned as the tool's text
-// content; on a dispatch error the result is marked IsError with the wire code as the
-// payload, preserving the closed taxonomy over the wire (mirrors the in-process
-// CallTool — design §6).
-func toolHandler(name string, m *metrics.Takuhai, d func(context.Context, []byte) ([]byte, error)) mcpsdk.ToolHandler {
-	return func(ctx context.Context, req *mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-		start := time.Now()
-		args := []byte(req.Params.Arguments)
-		if args == nil {
-			args = []byte("{}")
-		}
-		result, err := d(ctx, args)
-		if err != nil {
-			m.MCPTool(name, "error", time.Since(start))
-			return errorResult(err), nil
-		}
-		m.MCPTool(name, "ok", time.Since(start))
-		if name == "resolve_magnets" {
-			m.MCPResolveMagnets(resolveMagnetCounts(args, result))
-		}
-		return &mcpsdk.CallToolResult{
-			Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: string(result)}},
-		}, nil
-	}
-}
-
-func resolveMagnetCounts(args, result []byte) (hits, misses int) {
-	var in dispatch.ResolveMagnetsRequest
-	var out dispatch.ResolveMagnetsResult
-	if json.Unmarshal(args, &in) != nil || json.Unmarshal(result, &out) != nil {
-		return 0, 0
-	}
-	hits = len(out.Magnets)
-	if len(in.Infohashes) > hits {
-		misses = len(in.Infohashes) - hits
-	}
-	return hits, misses
 }
 
 // errorResult shapes a dispatch error into an MCP tool error (IsError true) carrying
