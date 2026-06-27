@@ -2,7 +2,7 @@
 
 Custom [n8n](https://n8n.io) nodes for **takuhai** — the anime release index. They let
 n8n drive the whole loop: fetch from a crawler, push to `/ingest`, claim queue work,
-and submit matcher results.
+submit matcher results, and get magnet links.
 
 ## Design
 
@@ -10,14 +10,16 @@ and submit matcher results.
 
 | Node | Kind | Credential | What it does |
 |---|---|---|---|
-| **Takuhai** | action | Takuhai API | The takuhai service surface. Resource **Ingest** (push posts) or **Queue** (claim / submit / queue stats). |
+| **Takuhai** | action | Takuhai API | The takuhai service surface. Resource **Releases** (ingest / get magnet link) or **Queue** (claim / submit / queue stats). |
 | **Takuhai Crawler** | action + trigger | Takuhai Crawler API | Generic `POST /crawl` action plus a polling trigger that stores cursor/watermark state in n8n and emits one batch item only when new posts exist. |
 | **Takuhai Queue Trigger** | trigger | Takuhai API | Polls `/queue/claim` and emits one batch item of claimed releases. |
 
 Operation I/O (the cardinalities differ by design):
 
-- **Ingest → Ingest Posts** — forwards the page's `posts` blob as one batched `/ingest`
+- **Releases → Ingest** — forwards the page's `posts` blob as one batched `/ingest`
   call → one summary item.
+- **Releases → Get Magnet Link** — fetches one `infohash` via `/magnets/{infohash}` and emits
+  `{infohash, magnet}`.
 - **Queue → Claim** — manual claim operation; emits one item containing `{items, count}`.
 - **Queue → Submit Dispositions** — accepts one JSON body: a single disposition object, an array of
   disposition objects, one `{items}` batch object, or structured-output `{output:{items}}`;

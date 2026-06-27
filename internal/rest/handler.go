@@ -31,6 +31,7 @@ func NewWithMetrics(s store.Store, m *metrics.Takuhai) *Handler {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ingest", h.handleIngest)
+	mux.HandleFunc("/magnets/", h.handleGetMagnet)
 	mux.HandleFunc("/queue/claim", h.handleClaim)
 	mux.HandleFunc("/queue/stats", h.handleQueueStats)
 	mux.HandleFunc("/submit", h.handleSubmit)

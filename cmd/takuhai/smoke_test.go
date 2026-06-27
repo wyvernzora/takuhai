@@ -86,6 +86,25 @@ func TestSmoke(t *testing.T) {
 			t.Fatalf("/ingest summary = %+v, want batch.new=1 and queue.available>=1", summary)
 		}
 
+		magnetResp, err := http.Get(baseURL + "/magnets/" + smokeHexInfohash)
+		if err != nil {
+			t.Fatalf("GET /magnets/{infohash}: %v", err)
+		}
+		defer magnetResp.Body.Close()
+		if magnetResp.StatusCode != http.StatusOK {
+			t.Fatalf("GET /magnets/{infohash} = %d, want 200", magnetResp.StatusCode)
+		}
+		var magnet struct {
+			Infohash string `json:"infohash"`
+			Magnet   string `json:"magnet"`
+		}
+		if err := json.NewDecoder(magnetResp.Body).Decode(&magnet); err != nil {
+			t.Fatalf("decode /magnets/{infohash}: %v", err)
+		}
+		if magnet.Infohash != smokeHexInfohash || magnet.Magnet != "magnet:?xt=urn:btih:"+smokeHexInfohash+"&tr=udp://smoke:80" {
+			t.Fatalf("/magnets/{infohash} = %+v, want stored magnet", magnet)
+		}
+
 		claimResp, err := http.Post(baseURL+"/queue/claim", "application/json", bytes.NewReader(mustJSON(t, map[string]any{
 			"limit": 5, "lease_seconds": 60,
 		})))

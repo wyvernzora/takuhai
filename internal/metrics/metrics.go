@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/felixge/httpsnoop"
@@ -55,6 +56,11 @@ func (m *HTTP) route(path string) string {
 	if route, ok := m.routes[path]; ok {
 		return route
 	}
+	for prefix, route := range m.routes {
+		if strings.HasSuffix(prefix, "/") && strings.HasPrefix(path, prefix) {
+			return route
+		}
+	}
 	return "other"
 }
 
@@ -84,6 +90,7 @@ func NewTakuhai(version, commit string, qs queueStatsProvider) *Takuhai {
 		HTTP: newHTTP(reg, "takuhai", map[string]string{
 			"/healthz":     "/healthz",
 			"/ingest":      "/ingest",
+			"/magnets/":    "/magnets/{infohash}",
 			"/mcp":         "/mcp",
 			"/metrics":     "/metrics",
 			"/queue/claim": "/queue/claim",

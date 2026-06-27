@@ -17,17 +17,22 @@ import (
 
 func TestHTTPWrapRecordsRouteAndStatus(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	m := newHTTP(reg, "testapp", map[string]string{"/known": "/known"})
+	m := newHTTP(reg, "testapp", map[string]string{"/known": "/known", "/magnets/": "/magnets/{infohash}"})
 	handler := m.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 	}))
 
 	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/known", http.NoBody))
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/magnets/0123456789abcdef0123456789abcdef01234567", http.NoBody))
 	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/random/123", http.NoBody))
 
 	got := testutil.ToFloat64(m.requests.WithLabelValues(http.MethodPost, "/known", "202"))
 	if got != 1 {
 		t.Fatalf("known route count = %v, want 1", got)
+	}
+	got = testutil.ToFloat64(m.requests.WithLabelValues(http.MethodGet, "/magnets/{infohash}", "202"))
+	if got != 1 {
+		t.Fatalf("magnet route count = %v, want 1", got)
 	}
 	got = testutil.ToFloat64(m.requests.WithLabelValues(http.MethodGet, "other", "202"))
 	if got != 1 {

@@ -144,6 +144,7 @@ func runHTTP(
 	// The REST push-ingestion and match-loop surfaces.
 	restAPI := rest.NewWithMetrics(st, metricsSrv)
 	mux.Handle("/ingest", restAPI)
+	mux.Handle("/magnets/", restAPI)
 	mux.Handle("/queue/", restAPI)
 	mux.Handle("/submit", restAPI)
 

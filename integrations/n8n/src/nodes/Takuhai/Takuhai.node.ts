@@ -29,26 +29,26 @@ export class Takuhai implements INodeType {
 				type: 'options',
 				noDataExpression: true,
 				options: [
-					{ name: 'Ingest', value: 'ingest' },
+					{ name: 'Releases', value: 'releases' },
 					{ name: 'Queue', value: 'queue' },
 				],
-				default: 'queue',
+				default: 'releases',
 			},
 			{
 				displayName: 'Operation',
 				name: 'operation',
 				type: 'options',
 				noDataExpression: true,
-				displayOptions: { show: { resource: ['ingest'] } },
+				displayOptions: { show: { resource: ['releases'] } },
 				options: [
+					{ name: 'Ingest', value: 'ingest', action: 'Ingest releases' },
 					{
-						name: 'Ingest Posts',
-						value: 'ingestPosts',
-						action: 'Ingest a batch of raw posts',
-						description: 'Forward a page of posts; takuhai dedups and queues them',
+						name: 'Get Magnet Link',
+						value: 'getMagnetLink',
+						action: 'Get a release magnet link',
 					},
 				],
-				default: 'ingestPosts',
+				default: 'ingest',
 			},
 			{
 				displayName: 'Operation',
@@ -70,7 +70,7 @@ export class Takuhai implements INodeType {
 				default: '={{ $json.posts }}',
 				required: true,
 				description: 'The posts payload from a Crawler page, forwarded as-is to /ingest',
-				displayOptions: { show: { resource: ['ingest'], operation: ['ingestPosts'] } },
+				displayOptions: { show: { resource: ['releases'], operation: ['ingest'] } },
 			},
 			{
 				displayName: 'Limit',
@@ -98,6 +98,14 @@ export class Takuhai implements INodeType {
 				description:
 					'A single /submit body, an array of /submit bodies, an object with items, or a structured-output object with output.items',
 				displayOptions: { show: { resource: ['queue'], operation: ['submit'] } },
+			},
+			{
+				displayName: 'Infohash',
+				name: 'infohash',
+				type: 'string',
+				default: '={{ $json.infohash }}',
+				required: true,
+				displayOptions: { show: { resource: ['releases'], operation: ['getMagnetLink'] } },
 			},
 		],
 	};
@@ -134,9 +142,16 @@ export class Takuhai implements INodeType {
 		const out: INodeExecutionData[] = [];
 		for (let i = 0; i < items.length; i++) {
 			try {
-				if (operation === 'ingestPosts') {
+				if (operation === 'ingest') {
 					const posts = this.getNodeParameter('posts', i);
 					const res = await call('POST', '/ingest', { posts });
+					out.push({ json: res, pairedItem: { item: i } });
+					continue;
+				}
+
+				if (operation === 'getMagnetLink') {
+					const infohash = String(this.getNodeParameter('infohash', i));
+					const res = await call('GET', `/magnets/${encodeURIComponent(infohash)}`);
 					out.push({ json: res, pairedItem: { item: i } });
 					continue;
 				}

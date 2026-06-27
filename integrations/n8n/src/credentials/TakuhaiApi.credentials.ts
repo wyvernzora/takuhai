@@ -6,7 +6,7 @@ import type {
 } from 'n8n-workflow';
 
 /**
- * Credentials for the takuhai service (POST /ingest + the queue match loop).
+ * Credentials for the takuhai service (REST catalog, ingest, and queue surfaces).
  * takuhai enforces no application-level auth by design, so this is just a base URL.
  */
 export class TakuhaiApi implements ICredentialType {
@@ -23,7 +23,7 @@ export class TakuhaiApi implements ICredentialType {
 			default: 'http://takuhai:8080',
 			placeholder: 'http://takuhai:8080',
 			required: true,
-			description: 'Base URL of the takuhai service (the /ingest, /queue/*, and /submit surfaces)',
+			description: 'Base URL of the takuhai service',
 		},
 	];
 

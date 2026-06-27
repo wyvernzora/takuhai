@@ -11,8 +11,8 @@ go build -o bin/takuhai ./cmd/takuhai
 ./bin/takuhai --addr=:8080
 ```
 
-takuhai serves `/ingest`, `/queue/claim`, `/queue/stats`, `/submit`, `/mcp`,
-`/healthz`, and `/metrics`.
+takuhai serves `/ingest`, `/magnets/{infohash}`, `/queue/claim`, `/queue/stats`,
+`/submit`, `/mcp`, `/healthz`, and `/metrics`.
 
 The DMHY crawler is separate:
 
@@ -51,6 +51,7 @@ n8n -> POST /ingest      -> takuhai
 n8n -> POST /queue/claim -> wake and claim raw release evidence
 n8n -> matcher agent     -> matched | unmatched | suppressed
 n8n -> POST /submit      -> takuhai
+n8n -> GET /magnets/{infohash} -> fetch a stored magnet link
 consumer agent -> MCP list_releases / resolve_magnets
 ```
 
@@ -60,8 +61,9 @@ an operator intervention signal.
 ## Security
 
 takuhai has no application-level auth. Restrict write surfaces by infrastructure:
-n8n should be the only caller of `/ingest`, `/queue/*`, and `/submit`; consumer agents
-should only reach `/mcp`. The service itself needs egress only to Postgres and DNS.
+n8n should be the only caller of `/ingest`, `/magnets/*`, `/queue/*`, and
+`/submit`; consumer agents should only reach `/mcp`. The service itself needs egress
+only to Postgres and DNS.
 The crawler deployment, not takuhai, owns DMHY egress.
 
 This repo does not ship Kubernetes manifests. Platform policy belongs with the

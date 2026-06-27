@@ -2,6 +2,7 @@ package rest
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,8 +13,9 @@ import (
 )
 
 type fakeStore struct {
-	claim  store.ClaimParams
-	submit store.SubmitParams
+	claim      store.ClaimParams
+	submit     store.SubmitParams
+	infohashes []string
 }
 
 func (f *fakeStore) Ping(context.Context) error { return nil }
@@ -44,8 +46,11 @@ func (f *fakeStore) CatalogStats(context.Context) (store.CatalogStats, error) {
 func (f *fakeStore) ListReleases(context.Context, store.ReleaseQuery) (store.ReleasePage, error) {
 	return store.ReleasePage{}, nil
 }
-func (f *fakeStore) ResolveMagnets(context.Context, []string) (map[string]string, error) {
-	return nil, nil
+func (f *fakeStore) ResolveMagnets(_ context.Context, infohashes []string) (map[string]string, error) {
+	f.infohashes = infohashes
+	return map[string]string{
+		"0123456789abcdef0123456789abcdef01234567": "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&tr=udp://tracker",
+	}, nil
 }
 func (f *fakeStore) Close() error { return nil }
 
@@ -75,5 +80,30 @@ func TestSubmitRejectsInvalidStatus(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; response %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
+func TestGetMagnet(t *testing.T) {
+	st := &fakeStore{}
+	req := httptest.NewRequest(http.MethodGet, "/magnets/0123456789abcdef0123456789abcdef01234567", http.NoBody)
+	rec := httptest.NewRecorder()
+
+	New(st).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; response %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if len(st.infohashes) != 1 || st.infohashes[0] != "0123456789abcdef0123456789abcdef01234567" {
+		t.Fatalf("infohashes = %#v", st.infohashes)
+	}
+	var body struct {
+		Infohash string `json:"infohash"`
+		Magnet   string `json:"magnet"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Infohash != "0123456789abcdef0123456789abcdef01234567" || body.Magnet != "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&tr=udp://tracker" {
+		t.Fatalf("response = %+v", body)
 	}
 }

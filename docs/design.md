@@ -43,6 +43,7 @@ or matcher attributes exist in this pass.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `POST` | `/ingest` | Accept a batch of crawler posts. |
+| `GET` | `/magnets/{infohash}` | Get the stored magnet URI for one release. |
 | `POST` | `/queue/claim` | Lease claimable unmatched releases. |
 | `GET` | `/queue/stats` | Return queue/status counts, including exhausted. |
 | `POST` | `/submit` | Submit `matched`, `unmatched`, or `suppressed` for a claim. |
@@ -102,3 +103,5 @@ The MCP surface is read-only:
 - `resolve_magnets({infohashes})` returns `{ "magnets": { "<infohash>": "<magnet>" } }`.
   Unknown infohashes and known releases without magnets are omitted.
   Returned magnets are the stored full magnet strings.
+
+The REST `/magnets/{infohash}` endpoint returns `{ "infohash": "...", "magnet": "..." }`.

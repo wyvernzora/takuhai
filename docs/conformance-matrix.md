@@ -18,5 +18,5 @@ go test -tags=conformance ./internal/conformance
 | Repeated `unmatched` submissions exhaust after the configured max attempts | `TestAPIShape_UnmatchedExhaustsAfterMaxAttempts` |
 
 The real-binary smoke test covers startup migrations, `/healthz`, `/ingest`,
-`/queue/claim`, `/submit`, `/queue/stats`, MCP tool registration/call, removed worker
-path rejection, and fail-fast bind behavior.
+`/magnets/{infohash}`, `/queue/claim`, `/submit`, `/queue/stats`, MCP tool
+registration/call, removed worker path rejection, and fail-fast bind behavior.
