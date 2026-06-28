@@ -48,7 +48,7 @@ func TestAPIShape_MatchListsReleaseAndResolvesMagnet(t *testing.T) {
 		ClaimToken: claim.Items[0].ClaimToken,
 		Status:     "matched",
 		Ref:        "tvdb:123",
-		Confidence: 0.94,
+		Confidence: ptr(0.94),
 		Reason:     "title matches",
 	}); err != nil {
 		t.Fatalf("Submit matched: %v", err)
@@ -114,7 +114,7 @@ func TestAPIShape_StaleClaimTokenRejected(t *testing.T) {
 		ClaimToken: first.ClaimToken,
 		Status:     "matched",
 		Ref:        "tvdb:123",
-		Confidence: 0.9,
+		Confidence: ptr(0.9),
 	})
 	if err == nil || !strings.Contains(err.Error(), store.ErrStaleLease.Error()) {
 		t.Fatalf("Submit with stale token err = %v, want stale lease", err)
@@ -188,3 +188,5 @@ func mustJSON(t *testing.T, v any) []byte {
 	}
 	return b
 }
+
+func ptr[T any](v T) *T { return &v }

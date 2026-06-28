@@ -74,6 +74,7 @@ type Takuhai struct {
 	queueClaimedItems    prometheus.Counter
 	queueClaimBatchSize  prometheus.Histogram
 	submits              *prometheus.CounterVec
+	submitConfidence     *prometheus.HistogramVec
 	mcpToolCalls         *prometheus.CounterVec
 	mcpToolDuration      *prometheus.HistogramVec
 	mcpResolveInfohashes *prometheus.CounterVec
@@ -141,6 +142,13 @@ func NewTakuhai(version, commit string, qs queueStatsProvider) *Takuhai {
 			Name:      "total",
 			Help:      "Total matcher submissions.",
 		}, []string{"status", "result"}),
+		submitConfidence: auto.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace: "takuhai",
+			Subsystem: "submit",
+			Name:      "confidence",
+			Help:      "Successful matcher submission confidence.",
+			Buckets:   []float64{0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99, 1},
+		}, []string{"status"}),
 		mcpToolCalls: auto.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "takuhai",
 			Subsystem: "mcp",
@@ -194,11 +202,15 @@ func (m *Takuhai) QueueClaim(count int, result string) {
 	}
 }
 
-func (m *Takuhai) Submit(status, result string) {
+func (m *Takuhai) Submit(status, result string, confidence *float64) {
 	if m == nil {
 		return
 	}
-	m.submits.WithLabelValues(submitStatus(status), result).Inc()
+	status = submitStatus(status)
+	m.submits.WithLabelValues(status, result).Inc()
+	if result == "ok" && confidence != nil && (status == "matched" || status == "suppressed") {
+		m.submitConfidence.WithLabelValues(status).Observe(*confidence)
+	}
 }
 
 func (m *Takuhai) MCPTool(tool, result string, dur time.Duration) {

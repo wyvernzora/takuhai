@@ -10,12 +10,12 @@ import (
 func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	body, ok := h.requirePost(w, r)
 	if !ok {
-		h.metrics.Submit("invalid", "error")
+		h.metrics.Submit("invalid", "error", nil)
 		return
 	}
 	var req dispatch.SubmitRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		h.metrics.Submit("invalid", "error")
+		h.metrics.Submit("invalid", "error", nil)
 		writeBadInput(w, "invalid request body")
 		return
 	}
@@ -24,10 +24,10 @@ func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		if code := dispatch.WireCode(err); code == "no_active_lease" || code == "stale_lease" {
 			result = "conflict"
 		}
-		h.metrics.Submit(req.Status, result)
+		h.metrics.Submit(req.Status, result, nil)
 		h.writeDispatchError(w, req.Infohash, err)
 		return
 	}
-	h.metrics.Submit(req.Status, "ok")
+	h.metrics.Submit(req.Status, "ok", req.Confidence)
 	writeJSON(w, http.StatusOK, []byte(`{"ok":true}`))
 }

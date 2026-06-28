@@ -46,12 +46,12 @@ type ClaimResult struct {
 }
 
 type SubmitRequest struct {
-	Infohash   string  `json:"infohash"`
-	ClaimToken int64   `json:"claim_token"`
-	Status     string  `json:"status"`
-	Ref        string  `json:"ref,omitempty"`
-	Confidence float64 `json:"confidence,omitempty"`
-	Reason     string  `json:"reason,omitempty"`
+	Infohash   string   `json:"infohash"`
+	ClaimToken int64    `json:"claim_token"`
+	Status     string   `json:"status"`
+	Ref        string   `json:"ref,omitempty"`
+	Confidence *float64 `json:"confidence,omitempty"`
+	Reason     string   `json:"reason,omitempty"`
 }
 
 type QueueStatsResult struct {

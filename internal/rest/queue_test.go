@@ -83,6 +83,26 @@ func TestSubmitRejectsInvalidStatus(t *testing.T) {
 	}
 }
 
+func TestSubmitPreservesSuppressedConfidence(t *testing.T) {
+	st := &fakeStore{}
+	req := httptest.NewRequest(http.MethodPost, "/submit", strings.NewReader(`{
+		"infohash":"0123456789abcdef0123456789abcdef01234567",
+		"claim_token":1,
+		"status":"suppressed",
+		"confidence":0.73
+	}`))
+	rec := httptest.NewRecorder()
+
+	New(st).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; response %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if st.submit.Confidence == nil || *st.submit.Confidence != 0.73 {
+		t.Fatalf("confidence = %v, want 0.73", st.submit.Confidence)
+	}
+}
+
 func TestGetMagnet(t *testing.T) {
 	st := &fakeStore{}
 	req := httptest.NewRequest(http.MethodGet, "/magnets/0123456789abcdef0123456789abcdef01234567", http.NoBody)

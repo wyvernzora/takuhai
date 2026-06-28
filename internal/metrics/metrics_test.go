@@ -11,6 +11,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 
 	"github.com/wyvernzora/takuhai/internal/store"
 )
@@ -50,6 +51,21 @@ func TestConstructorsUseIndependentRegistries(t *testing.T) {
 	_ = NewTakuhai("v", "c", q)
 	_ = NewDMHY("v", "c")
 	_ = NewDMHY("v", "c")
+}
+
+func TestSubmitConfidenceRecordsMatchedAndSuppressed(t *testing.T) {
+	m := NewTakuhai("v", "c", fakeQueueStats{})
+
+	matched := 0.94
+	suppressed := 0.73
+	unmatched := 0.51
+	m.Submit("matched", "ok", &matched)
+	m.Submit("suppressed", "ok", &suppressed)
+	m.Submit("unmatched", "ok", &unmatched)
+	m.Submit("matched", "error", &matched)
+
+	assertHistogram(t, m.submitConfidence.WithLabelValues("matched"), 1, matched)
+	assertHistogram(t, m.submitConfidence.WithLabelValues("suppressed"), 1, suppressed)
 }
 
 func TestQueueStatsErrorDoesNotFailScrape(t *testing.T) {
@@ -106,4 +122,16 @@ func (f fakeQueueStats) QueueStats(context.Context) (store.QueueStats, error) {
 
 func (f fakeQueueStats) CatalogStats(context.Context) (store.CatalogStats, error) {
 	return f.catalog, f.err
+}
+
+func assertHistogram(t *testing.T, metric prometheus.Observer, count uint64, sum float64) {
+	t.Helper()
+	var pb dto.Metric
+	if err := metric.(prometheus.Metric).Write(&pb); err != nil {
+		t.Fatalf("write histogram: %v", err)
+	}
+	h := pb.GetHistogram()
+	if h.GetSampleCount() != count || h.GetSampleSum() != sum {
+		t.Fatalf("histogram = count %d sum %v, want count %d sum %v", h.GetSampleCount(), h.GetSampleSum(), count, sum)
+	}
 }

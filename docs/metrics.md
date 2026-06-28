@@ -22,6 +22,7 @@ takuhai and the DMHY crawler expose Prometheus metrics at `/metrics`.
 | `takuhai_queue_claimed_items_total` | counter | none | Claimed queue items. |
 | `takuhai_queue_claim_batch_size` | histogram | none | Items per non-empty claim response. |
 | `takuhai_submit_total` | counter | `status`, `result` | Submit attempts by matcher status and result. Status is `matched`, `unmatched`, `suppressed`, or `invalid`; result is `ok`, `conflict`, or `error`. |
+| `takuhai_submit_confidence` | histogram | `status` | Confidence values for successful `matched` and `suppressed` submissions. |
 | `takuhai_mcp_tool_calls_total` | counter | `tool`, `result` | MCP tool calls by tool and `ok`/`error`. |
 | `takuhai_mcp_tool_duration_seconds` | histogram | `tool` | MCP tool call duration. |
 | `takuhai_mcp_resolve_magnets_infohashes_total` | counter | `result` | `resolve_magnets` infohash lookups by `hit` or `miss`. |
@@ -43,3 +44,7 @@ takuhai and the DMHY crawler expose Prometheus metrics at `/metrics`.
 | `takuhai_dmhy_parse_posts_total` | counter | `result` | Parsed posts by result. Currently only successful parsed posts increment `result="ok"`. |
 
 Go runtime and process metrics are also exported by each service.
+
+An example Grafana dashboard JSON is available at
+[`docs/grafana/takuhai-dashboard.json`](grafana/takuhai-dashboard.json). It uses a
+Prometheus datasource variable named `datasource`.

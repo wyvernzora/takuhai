@@ -81,7 +81,7 @@ type SubmitParams struct {
 	ClaimToken int64
 	Status     string
 	Ref        string
-	Confidence float64
+	Confidence *float64
 	Reason     string
 }
 

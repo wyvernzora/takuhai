@@ -78,8 +78,8 @@ Crawler posts and ingest posts use the same shape:
 }
 ```
 
-`ref` and `confidence` are required only for `matched`. `reason` is plain debugging
-text.
+`ref` is required only for `matched`. `confidence` is meaningful for successful
+`matched` and `suppressed` submissions. `reason` is plain debugging text.
 
 ## Queue Semantics
 

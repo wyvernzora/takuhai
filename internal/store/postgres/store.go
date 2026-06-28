@@ -350,7 +350,7 @@ func (s *Store) Submit(ctx context.Context, p store.SubmitParams) error { //noli
 				lease_expires_at = NULL,
 				updated_at = $4
 			WHERE infohash = $1
-		`, p.Infohash, p.Ref, p.Confidence, now)
+		`, p.Infohash, p.Ref, nullableConfidence(finalStatus, p.Confidence), now)
 	case "suppressed", "exhausted":
 		_, err = tx.Exec(ctx, `
 			UPDATE releases SET
@@ -411,9 +411,9 @@ func nullableRef(status, ref string) any {
 	return nil
 }
 
-func nullableConfidence(status string, confidence float64) any {
-	if status == "matched" {
-		return confidence
+func nullableConfidence(status string, confidence *float64) any {
+	if (status == "matched" || status == "suppressed") && confidence != nil {
+		return *confidence
 	}
 	return nil
 }
