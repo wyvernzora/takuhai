@@ -12,11 +12,11 @@ import type { INodeType, INodeTypeDescription } from 'n8n-workflow';
 export class TakuhaiCrawler implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Takuhai Crawler',
-		name: 'takuhaiCrawler',
+		name: 'takuhaiCrawlerV2',
 		icon: 'file:takuhai.svg',
 		group: ['transform'],
 		version: 1,
-		subtitle: '={{"crawl: " + $parameter["pageSize"] + " posts"}}',
+		subtitle: '={{$parameter["operation"] + " (" + $parameter["resource"] + ")"}}',
 		description: 'Fetch a page of posts from a takuhai-shaped crawler (POST /crawl)',
 		defaults: { name: 'Takuhai Crawler' },
 		inputs: ['main'],
@@ -29,6 +29,22 @@ export class TakuhaiCrawler implements INodeType {
 			headers: { 'Content-Type': 'application/json' },
 		},
 		properties: [
+			{
+				displayName: 'Resource',
+				name: 'resource',
+				type: 'options',
+				noDataExpression: true,
+				options: [{ name: 'Crawler', value: 'crawler' }],
+				default: 'crawler',
+			},
+			{
+				displayName: 'Operation',
+				name: 'operation',
+				type: 'options',
+				noDataExpression: true,
+				options: [{ name: 'Crawl', value: 'crawl', action: 'Crawl posts' }],
+				default: 'crawl',
+			},
 			{
 				displayName: 'Page Size',
 				name: 'pageSize',

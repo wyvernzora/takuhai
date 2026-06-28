@@ -23,14 +23,14 @@ type CrawlState = IDataObject & {
  */
 export class TakuhaiCrawlerTrigger implements INodeType {
 	description: INodeTypeDescription = {
-		displayName: 'Takuhai Crawler',
-		name: 'takuhaiCrawlerTrigger',
+		displayName: 'Takuhai Crawler Trigger',
+		name: 'takuhaiCrawlerV2Trigger',
 		icon: 'file:takuhai.svg',
 		group: ['trigger'],
 		version: 1,
 		subtitle: '={{"crawl: " + $parameter["batchSize"] + " posts"}}',
 		description: 'Polls a takuhai-shaped crawler and emits new posts in batches',
-		defaults: { name: 'Takuhai Crawler' },
+		defaults: { name: 'Takuhai Crawler Trigger' },
 		polling: true,
 		inputs: [],
 		outputs: ['main'],
