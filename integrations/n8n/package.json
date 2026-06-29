@@ -15,6 +15,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
     "dev": "tsc -p tsconfig.json --watch",
+    "test": "pnpm build && node scripts/test-crawler-trigger.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "n8n": {

@@ -5,6 +5,7 @@ package rest
 import (
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 
 	"github.com/wyvernzora/takuhai/internal/dispatch"
@@ -17,6 +18,7 @@ type Handler struct {
 	ingest   ingestStore
 	mux      *http.ServeMux
 	metrics  *metrics.Takuhai
+	logger   *slog.Logger
 }
 
 func New(s store.Store) *Handler {
@@ -24,10 +26,15 @@ func New(s store.Store) *Handler {
 }
 
 func NewWithMetrics(s store.Store, m *metrics.Takuhai) *Handler {
+	return NewWithMetricsAndLogger(s, m, nil)
+}
+
+func NewWithMetricsAndLogger(s store.Store, m *metrics.Takuhai, logger *slog.Logger) *Handler {
 	h := &Handler{
 		dispatch: dispatch.New(s),
 		ingest:   s,
 		metrics:  m,
+		logger:   logger,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ingest", h.handleIngest)
@@ -40,6 +47,13 @@ func NewWithMetrics(s store.Store, m *metrics.Takuhai) *Handler {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) { h.mux.ServeHTTP(w, r) }
+
+func (h *Handler) log(r *http.Request, level slog.Level, msg string, attrs ...any) {
+	if h.logger == nil {
+		return
+	}
+	h.logger.Log(r.Context(), level, msg, attrs...)
+}
 
 type errorResponse struct {
 	Code     string `json:"code,omitempty"`
@@ -74,6 +88,13 @@ func (h *Handler) writeDispatchError(w http.ResponseWriter, infohash string, err
 	default:
 		writeError(w, http.StatusInternalServerError, "", infohash, "internal error")
 	}
+}
+
+func dispatchLogLevel(err error) slog.Level {
+	if dispatch.WireCode(err) == "" {
+		return slog.LevelError
+	}
+	return slog.LevelInfo
 }
 
 func writeBadInput(w http.ResponseWriter, msg string) {

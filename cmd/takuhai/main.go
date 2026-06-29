@@ -25,6 +25,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/felixge/httpsnoop"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
@@ -94,13 +95,17 @@ func run() error {
 	// Bring the schema to head BEFORE serving (the embedded goose migrations are
 	// idempotent — a database already at head is a no-op). A migration failure aborts
 	// startup with a non-zero exit; we never serve against an unmigrated database.
+	logger.Info("running migrations")
 	if err := runMigrations(ctx, cfg.DatabaseURL); err != nil {
+		logger.Error("migrations failed", "err", err)
 		return fmt.Errorf("run migrations: %w", err)
 	}
+	logger.Info("migrations complete")
 
 	// Construct the Postgres store.
 	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
+		logger.Error("database connection failed", "err", err)
 		return fmt.Errorf("connect database: %w", err)
 	}
 	st := postgres.NewStoreWithConfig(pool, nil, postgres.StoreConfig{
@@ -110,12 +115,12 @@ func run() error {
 
 	// The single mountable /healthz handler (DB ping only — design §10). Both the HTTP
 	// listener and the MCP server mount the SAME handler.
-	healthz := health.NewHandler(st)
+	healthz := health.NewHandlerWithLogger(st, logger.With("component", "health"))
 	metricsSrv := metrics.NewTakuhai(version, commit, st)
 
 	// The consumer-only MCP server (list_releases / resolve_magnets). Its Handler() serves
 	// /mcp + /healthz.
-	mcpSrv := mcp.NewServerWithMetrics(st, healthz, metricsSrv)
+	mcpSrv := mcp.NewServerWithMetricsAndLogger(st, healthz, metricsSrv, logger.With("component", "mcp"))
 
 	logger.Info("takuhai starting",
 		"version", version,
@@ -142,13 +147,13 @@ func runHTTP(
 	mux.Handle("/healthz", healthz)
 	mux.Handle("/metrics", metricsSrv.Handler())
 	// The REST push-ingestion and match-loop surfaces.
-	restAPI := rest.NewWithMetrics(st, metricsSrv)
+	restAPI := rest.NewWithMetricsAndLogger(st, metricsSrv, logger.With("component", "rest"))
 	mux.Handle("/ingest", restAPI)
 	mux.Handle("/magnets/", restAPI)
 	mux.Handle("/queue/", restAPI)
 	mux.Handle("/submit", restAPI)
 
-	srv := &http.Server{Addr: addr, Handler: metricsSrv.HTTP.Wrap(mux)}
+	srv := &http.Server{Addr: addr, Handler: logHTTP(logger, metricsSrv.HTTP, metricsSrv.HTTP.Wrap(mux))}
 
 	// Bind SYNCHRONOUSLY so a failed bind (e.g. the port is already in use) fails fast:
 	// run() returns the error promptly with a non-zero exit instead of leaving a process
@@ -172,18 +177,41 @@ func runHTTP(
 		shutCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), drainTimeout)
 		defer cancel()
 		if err := srv.Shutdown(shutCtx); err != nil {
+			logger.Warn("graceful shutdown timed out", "err", err)
 			_ = srv.Close()
 		}
 		if err := <-serveErr; err != nil && err != http.ErrServerClosed {
+			logger.Error("server stopped with error", "err", err)
 			return err
 		}
+		logger.Info("takuhai stopped")
 		return nil
 	case err := <-serveErr:
 		if err != nil && err != http.ErrServerClosed {
+			logger.Error("server stopped with error", "err", err)
 			return err
 		}
 		return nil
 	}
+}
+
+func logHTTP(logger *slog.Logger, routes interface{ Route(string) string }, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		captured := httpsnoop.CaptureMetrics(next, w, r)
+		path := routes.Route(r.URL.Path)
+		if path == "/healthz" || path == "/metrics" {
+			return
+		}
+		logger.InfoContext(r.Context(), "http request completed",
+			"component", "http",
+			"method", r.Method,
+			"path", path,
+			"status", captured.Code,
+			"duration_ms", time.Since(start).Milliseconds(),
+			"response_bytes", captured.Written,
+		)
+	})
 }
 
 // drainTimeout bounds the graceful HTTP shutdown. A consumer holding an open /mcp

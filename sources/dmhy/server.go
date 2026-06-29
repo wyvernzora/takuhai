@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -43,6 +44,7 @@ type Server struct {
 	limiter *rate.Limiter
 	client  *http.Client
 	metrics *metrics.DMHY
+	logger  *slog.Logger
 }
 
 // NewServer constructs the crawl server over a DMHY base URL and a request rate
@@ -56,10 +58,15 @@ func NewServer(baseURL string, sortID int, ratePerSec float64, cacheTTL time.Dur
 }
 
 func NewServerWithMetrics(baseURL string, sortID int, ratePerSec float64, cacheTTL time.Duration, m *metrics.DMHY) *Server {
+	return NewServerWithMetricsAndLogger(baseURL, sortID, ratePerSec, cacheTTL, m, nil)
+}
+
+func NewServerWithMetricsAndLogger(baseURL string, sortID int, ratePerSec float64, cacheTTL time.Duration, m *metrics.DMHY, logger *slog.Logger) *Server {
 	s := &Server{
 		baseURL: baseURL,
 		client:  &http.Client{Timeout: 30 * time.Second},
 		metrics: m,
+		logger:  logger,
 	}
 	if ratePerSec > 0 {
 		s.limiter = rate.NewLimiter(rate.Limit(ratePerSec), 1)
@@ -80,6 +87,13 @@ func NewServerWithMetrics(baseURL string, sortID int, ratePerSec float64, cacheT
 // status mapping, JSON round-trip) over deterministic offline fixtures.
 func newServerWithFetcher(fetch PageFetcher, threshold int) *Server {
 	return &Server{crawler: NewCrawler(fetch, threshold)}
+}
+
+func (s *Server) log(r *http.Request, level slog.Level, msg string, attrs ...any) {
+	if s.logger == nil {
+		return
+	}
+	s.logger.Log(r.Context(), level, msg, attrs...)
 }
 
 // fetchPage is the live PageFetcher: it builds the DMHY archive URL for the given
@@ -135,12 +149,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	if r.Method != http.MethodPost {
 		s.metrics.Crawl("bad_request", 0, time.Since(start))
+		s.log(r, slog.LevelWarn, "crawl rejected", "reason", "method_not_allowed", "method", r.Method)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var req CrawlRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		s.metrics.Crawl("bad_request", 0, time.Since(start))
+		s.log(r, slog.LevelWarn, "crawl rejected", "reason", "invalid_body", "err", err)
 		http.Error(w, fmt.Sprintf("dmhy: decode /crawl request: %v", err), http.StatusBadRequest)
 		return
 	}
@@ -150,11 +166,25 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	lookback, err := parseLookback(req.Lookback)
 	if err != nil {
 		s.metrics.Crawl("bad_request", 0, time.Since(start))
+		s.log(r, slog.LevelWarn, "crawl rejected",
+			"reason", "invalid_lookback",
+			"page_size", req.PageSize,
+			"cursor", req.Cursor,
+			"lookback", req.Lookback,
+			"err", err,
+		)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if _, _, err := parseCursor(req.Cursor); err != nil {
 		s.metrics.Crawl("bad_request", 0, time.Since(start))
+		s.log(r, slog.LevelWarn, "crawl rejected",
+			"reason", "invalid_cursor",
+			"page_size", req.PageSize,
+			"cursor_len", len(req.Cursor),
+			"lookback", req.Lookback,
+			"err", err,
+		)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -165,16 +195,42 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			result = "parse_error"
 		}
 		s.metrics.Crawl(result, 0, time.Since(start))
+		s.log(r, slog.LevelWarn, "crawl failed",
+			"result", result,
+			"page_size", req.PageSize,
+			"cursor", req.Cursor,
+			"lookback", req.Lookback,
+			"duration_ms", time.Since(start).Milliseconds(),
+			"err", err,
+		)
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		s.metrics.Crawl("error", len(resp.Posts), time.Since(start))
+		s.log(r, slog.LevelError, "crawl response encode failed",
+			"post_count", len(resp.Posts),
+			"duration_ms", time.Since(start).Milliseconds(),
+			"err", err,
+		)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	s.metrics.Crawl("ok", len(resp.Posts), time.Since(start))
+	s.log(r, slog.LevelInfo, "crawl completed",
+		"page_size", req.PageSize,
+		"post_count", len(resp.Posts),
+		"has_more", resp.HasMore,
+		"has_next_cursor", resp.NextCursor != "",
+		"cursor", req.Cursor,
+		"next_cursor", resp.NextCursor,
+		"lookback", req.Lookback,
+		"stop_reason", resp.stopReason,
+		"pages_fetched", resp.pagesFetched,
+		"last_page", resp.lastPage,
+		"duration_ms", time.Since(start).Milliseconds(),
+	)
 }
 
 // readFileURL reads a file:// page body for the offline path. A trailing query string

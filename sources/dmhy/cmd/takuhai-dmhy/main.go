@@ -28,6 +28,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/felixge/httpsnoop"
+
 	// time/tzdata bakes the IANA zoneinfo database into the binary so
 	// timezone-dependent parsing works in distroless/scratch images.
 	_ "time/tzdata"
@@ -202,12 +204,12 @@ func (c *ServeCmd) Run() error {
 	defer stop()
 
 	metricsSrv := metrics.NewDMHY(version, commit)
-	srv := dmhy.NewServerWithMetrics(c.BaseURL, c.SortID, c.RateRPS, c.CacheTTL, metricsSrv)
+	srv := dmhy.NewServerWithMetricsAndLogger(c.BaseURL, c.SortID, c.RateRPS, c.CacheTTL, metricsSrv, logger.With("component", "crawler"))
 
 	mux := http.NewServeMux()
 	mux.Handle("/crawl", srv)
 	mux.Handle("/metrics", metricsSrv.Handler())
-	httpSrv := &http.Server{Addr: c.Addr, Handler: metricsSrv.HTTP.Wrap(mux)}
+	httpSrv := &http.Server{Addr: c.Addr, Handler: logHTTP(logger, metricsSrv.HTTP, metricsSrv.HTTP.Wrap(mux))}
 
 	logger.Info("takuhai-dmhy starting",
 		"version", version,
@@ -221,6 +223,7 @@ func (c *ServeCmd) Run() error {
 	errCh := make(chan error, 1)
 	go func() {
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error("server stopped with error", "err", err)
 			errCh <- err
 		}
 	}()
@@ -234,7 +237,31 @@ func (c *ServeCmd) Run() error {
 	logger.Info("takuhai-dmhy shutting down")
 	shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return httpSrv.Shutdown(shutCtx)
+	if err := httpSrv.Shutdown(shutCtx); err != nil {
+		logger.Warn("graceful shutdown timed out", "err", err)
+		return err
+	}
+	logger.Info("takuhai-dmhy stopped")
+	return nil
+}
+
+func logHTTP(logger *slog.Logger, routes interface{ Route(string) string }, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		captured := httpsnoop.CaptureMetrics(next, w, r)
+		path := routes.Route(r.URL.Path)
+		if path == "/metrics" {
+			return
+		}
+		logger.InfoContext(r.Context(), "http request completed",
+			"component", "http",
+			"method", r.Method,
+			"path", path,
+			"status", captured.Code,
+			"duration_ms", time.Since(start).Milliseconds(),
+			"response_bytes", captured.Written,
+		)
+	})
 }
 
 // slogLevel maps a validated --log-level to a slog.Level.

@@ -5,6 +5,7 @@ import type {
 	INodeTypeDescription,
 	IPollFunctions,
 } from 'n8n-workflow';
+import { LoggerProxy as Logger } from 'n8n-workflow';
 
 const CRED = 'takuhaiApi';
 
@@ -50,21 +51,29 @@ export class TakuhaiTrigger implements INodeType {
 		const credentials = await this.getCredentials(CRED);
 		const baseUrl = String(credentials.baseUrl).replace(/\/+$/, '');
 
-		const res = (await this.helpers.httpRequest({
-			method: 'POST',
-			url: `${baseUrl}/queue/claim`,
-			body: {
-				limit: this.getNodeParameter('limit', 10),
-				lease_seconds: this.getNodeParameter('lease_seconds', 300),
-			},
-			json: true,
-		})) as IDataObject;
+		let res: IDataObject;
+		try {
+			res = (await this.helpers.httpRequest({
+				method: 'POST',
+				url: `${baseUrl}/queue/claim`,
+				body: {
+					limit: this.getNodeParameter('limit', 10),
+					lease_seconds: this.getNodeParameter('lease_seconds', 300),
+				},
+				json: true,
+			})) as IDataObject;
+		} catch (error) {
+			Logger.debug('Takuhai queue trigger claim failed', { err: (error as Error).message });
+			throw error;
+		}
 
 		const claimed = (res.items as IDataObject[]) ?? [];
 		if (claimed.length === 0) {
+			Logger.debug('Takuhai queue trigger poll completed with no claims');
 			return null;
 		}
 
+		Logger.info('Takuhai queue trigger emitted claims', { claimed_count: claimed.length });
 		return [[{ json: { items: claimed, count: claimed.length } }]];
 	}
 }

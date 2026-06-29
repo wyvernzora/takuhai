@@ -64,6 +64,8 @@ func (m *HTTP) route(path string) string {
 	return "other"
 }
 
+func (m *HTTP) Route(path string) string { return m.route(path) }
+
 type Takuhai struct {
 	HTTP                 *HTTP
 	handler              http.Handler

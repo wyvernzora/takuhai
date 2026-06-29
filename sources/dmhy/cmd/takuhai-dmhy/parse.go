@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 
 	"github.com/wyvernzora/takuhai/pkg/rawpost"
@@ -39,8 +40,11 @@ func (c *ParseCmd) Run() error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "takuhai-dmhy parse: %d post(s) from %d file(s), %d failed\n",
-		posts, len(c.Files), failures)
+	slog.Info("parse completed",
+		"post_count", posts,
+		"file_count", len(c.Files),
+		"failure_count", failures,
+	)
 	if failures > 0 {
 		return fmt.Errorf("%d of %d file(s) failed to parse", failures, len(c.Files))
 	}
@@ -56,10 +60,10 @@ func (c *ParseCmd) emit(w io.Writer) (posts, failures int, err error) {
 		parsed, perr := parseFile(name)
 		if perr != nil {
 			failures++
-			fmt.Fprintf(os.Stderr, "takuhai-dmhy parse: %s: %v\n", name, perr)
 			if !c.KeepGoing {
 				return posts, failures, fmt.Errorf("%s: %w", name, perr)
 			}
+			slog.Warn("parse file failed", "file", name, "err", perr)
 			continue
 		}
 		for i := range parsed {

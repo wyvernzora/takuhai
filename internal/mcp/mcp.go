@@ -1,7 +1,9 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -41,6 +43,7 @@ type Server struct {
 	healthz  http.Handler   // the standalone /healthz handler (design §10/§11) — mounted, not owned
 	sdk      *mcpsdk.Server // the SDK server with the consumer tools registered
 	metrics  *metrics.Takuhai
+	logger   *slog.Logger
 }
 
 // NewServer constructs the consumer-only MCP server over the Store seam. The healthz
@@ -53,10 +56,21 @@ func NewServer(s store.Store, healthz http.Handler) *Server {
 }
 
 func NewServerWithMetrics(s store.Store, healthz http.Handler, m *metrics.Takuhai) *Server {
+	return NewServerWithMetricsAndLogger(s, healthz, m, nil)
+}
+
+func NewServerWithMetricsAndLogger(s store.Store, healthz http.Handler, m *metrics.Takuhai, logger *slog.Logger) *Server {
 	d := dispatch.New(s)
-	srv := &Server{dispatch: d, healthz: healthz, metrics: m}
+	srv := &Server{dispatch: d, healthz: healthz, metrics: m, logger: logger}
 	srv.sdk = newSDKServer(srv)
 	return srv
+}
+
+func (s *Server) log(ctx context.Context, level slog.Level, msg string, attrs ...any) {
+	if s.logger == nil {
+		return
+	}
+	s.logger.Log(ctx, level, msg, attrs...)
 }
 
 // newSDKServer builds the SDK server and registers the two consumer tools. Each tool

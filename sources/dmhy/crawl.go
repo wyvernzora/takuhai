@@ -45,6 +45,10 @@ type CrawlResponse struct {
 	Posts      []rawpost.RawPost `json:"posts"`
 	NextCursor string            `json:"next_cursor"`
 	HasMore    bool              `json:"has_more"`
+
+	stopReason   string `json:"-"`
+	pagesFetched int    `json:"-"`
+	lastPage     int    `json:"-"`
 }
 
 // Crawler is the stateless DMHY crawl engine behind POST /crawl. It owns the
@@ -117,8 +121,10 @@ func (c *Crawler) Crawl(ctx context.Context, req CrawlRequest, lookback time.Dur
 		// page is the page to fetch next; skip is the leading rows to drop on the FIRST
 		// fetched page. An offset>0 cursor resumes ON its page (rows remain); an offset==0
 		// cursor means that page is fully consumed → start at page+1.
-		page = curPage
-		skip = curOffset
+		page         = curPage
+		skip         = curOffset
+		pagesFetched int
+		lastPage     int
 	)
 	if skip == 0 {
 		page++
@@ -126,6 +132,8 @@ func (c *Crawler) Crawl(ctx context.Context, req CrawlRequest, lookback time.Dur
 
 	for {
 		body, err := c.fetch(ctx, c.sortID, page)
+		pagesFetched++
+		lastPage = page
 		if err != nil {
 			// A transient fetch failure surfaces verbatim and must NOT look like the floor
 			// nor advance past the failed page (design §1/§5/§8): a retry re-fetches the
@@ -136,7 +144,7 @@ func (c *Crawler) Crawl(ctx context.Context, req CrawlRequest, lookback time.Dur
 		if err != nil {
 			// A parse failure is a fetch failure under the §8 contract — surface it, never
 			// treat unparseable bytes as an empty page.
-			return CrawlResponse{}, fmt.Errorf("%w: %w", errCrawlParse, err)
+			return CrawlResponse{}, fmt.Errorf("%w: sort_id %d page %d: %w", errCrawlParse, c.sortID, page, err)
 		}
 		c.metrics.ParsePosts("ok", len(pagePosts))
 
@@ -147,7 +155,7 @@ func (c *Crawler) Crawl(ctx context.Context, req CrawlRequest, lookback time.Dur
 			// a next_cursor inside it.
 			consecutiveEmpty++
 			if consecutiveEmpty >= c.threshold {
-				return CrawlResponse{Posts: posts, NextCursor: "", HasMore: false}, nil
+				return crawlResponse(posts, "", false, "archive_floor", pagesFetched, lastPage), nil
 			}
 			page++
 			skip = 0
@@ -169,7 +177,7 @@ func (c *Crawler) Crawl(ctx context.Context, req CrawlRequest, lookback time.Dur
 			p := pagePosts[i]
 			if outOfWindow(p.PublishedAt, cutoff, hasCutoff) {
 				// Newest → oldest: the first out-of-window post means all following are too.
-				return CrawlResponse{Posts: posts, NextCursor: "", HasMore: false}, nil
+				return crawlResponse(posts, "", false, "lookback_boundary", pagesFetched, lastPage), nil
 			}
 			posts = append(posts, p)
 
@@ -185,21 +193,32 @@ func (c *Crawler) Crawl(ctx context.Context, req CrawlRequest, lookback time.Dur
 				// boundary).
 				if outOfWindow(pagePosts[i+1].PublishedAt, cutoff, hasCutoff) {
 					// The boundary lands exactly at the budget edge; the caller is done.
-					return CrawlResponse{Posts: posts, NextCursor: "", HasMore: false}, nil
+					return crawlResponse(posts, "", false, "lookback_boundary", pagesFetched, lastPage), nil
 				}
 				// Resume mid-page at offset (i+1): the count of this page's rows now returned.
-				return CrawlResponse{Posts: posts, NextCursor: formatCursor(page, i+1), HasMore: true}, nil
+				return crawlResponse(posts, formatCursor(page, i+1), true, "page_budget", pagesFetched, lastPage), nil
 			}
 			// Budget filled exactly at the page's last row. The next row lives on an
 			// unfetched page+1 — do NOT peek it. Park (page, 0): decode treats offset==0 as
 			// "this page fully consumed → page++ before fetching", so it resumes by fetching
 			// page+1. (Parking (page+1, 0) would decode to page+2 and silently drop every row
 			// of page+1.)
-			return CrawlResponse{Posts: posts, NextCursor: formatCursor(page, 0), HasMore: true}, nil
+			return crawlResponse(posts, formatCursor(page, 0), true, "page_budget", pagesFetched, lastPage), nil
 		}
 
 		// Page exhausted without filling the budget — advance to the next page.
 		page++
+	}
+}
+
+func crawlResponse(posts []rawpost.RawPost, nextCursor string, hasMore bool, stopReason string, pagesFetched, lastPage int) CrawlResponse {
+	return CrawlResponse{
+		Posts:        posts,
+		NextCursor:   nextCursor,
+		HasMore:      hasMore,
+		stopReason:   stopReason,
+		pagesFetched: pagesFetched,
+		lastPage:     lastPage,
 	}
 }
 

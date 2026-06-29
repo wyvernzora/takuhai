@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	_ "embed"
+	"log/slog"
 	"time"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -22,15 +23,31 @@ func addResolveMagnetsTool(srv *mcpsdk.Server, s *Server) {
 		start := time.Now()
 		out, err := s.dispatch.ResolveMagnetsTyped(ctx, input)
 		if err != nil {
-			s.metrics.MCPTool("resolve_magnets", "error", time.Since(start))
+			dur := time.Since(start)
+			s.metrics.MCPTool("resolve_magnets", "error", dur)
+			s.log(ctx, slog.LevelWarn, "mcp tool failed",
+				"tool", "resolve_magnets",
+				"input_count", len(input.Infohashes),
+				"code", dispatch.WireCode(err),
+				"duration_ms", dur.Milliseconds(),
+				"err", err,
+			)
 			return errorResult(err), dispatch.ResolveMagnetsResult{}, nil
 		}
-		s.metrics.MCPTool("resolve_magnets", "ok", time.Since(start))
+		dur := time.Since(start)
+		s.metrics.MCPTool("resolve_magnets", "ok", dur)
 		misses := len(input.Infohashes) - len(out.Magnets)
 		if misses < 0 {
 			misses = 0
 		}
 		s.metrics.MCPResolveMagnets(len(out.Magnets), misses)
+		s.log(ctx, slog.LevelInfo, "mcp tool completed",
+			"tool", "resolve_magnets",
+			"input_count", len(input.Infohashes),
+			"hit_count", len(out.Magnets),
+			"miss_count", misses,
+			"duration_ms", dur.Milliseconds(),
+		)
 		return nil, out, nil
 	})
 }

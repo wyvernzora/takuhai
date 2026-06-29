@@ -6,6 +6,7 @@ import type {
 	INodeType,
 	INodeTypeDescription,
 } from 'n8n-workflow';
+import { LoggerProxy as Logger } from 'n8n-workflow';
 
 const CRED = 'takuhaiApi';
 
@@ -116,6 +117,7 @@ export class Takuhai implements INodeType {
 
 		const credentials = await this.getCredentials(CRED);
 		const baseUrl = String(credentials.baseUrl).replace(/\/+$/, '');
+		Logger.info('Takuhai node execution started', { operation, item_count: items.length });
 
 		const call = (method: IHttpRequestMethods, path: string, body?: IDataObject) =>
 			this.helpers.httpRequest({
@@ -127,6 +129,11 @@ export class Takuhai implements INodeType {
 
 		if (operation === 'queueStats') {
 			const stats = await call('GET', '/queue/stats');
+			Logger.info('Takuhai queue stats fetched', {
+				available: stats.available,
+				leased: stats.leased,
+				exhausted: stats.exhausted,
+			});
 			return [[{ json: stats }]];
 		}
 
@@ -136,6 +143,7 @@ export class Takuhai implements INodeType {
 				lease_seconds: this.getNodeParameter('lease_seconds', 0),
 			});
 			const claimed = (res.items as IDataObject[]) ?? [];
+			Logger.info('Takuhai queue claim completed', { claimed_count: claimed.length });
 			return [[{ json: { items: claimed, count: claimed.length } }]];
 		}
 
@@ -145,6 +153,13 @@ export class Takuhai implements INodeType {
 				if (operation === 'ingest') {
 					const posts = this.getNodeParameter('posts', i);
 					const res = await call('POST', '/ingest', { posts });
+					Logger.info('Takuhai ingest completed', {
+						item_index: i,
+						post_count: Array.isArray(posts) ? posts.length : undefined,
+						new_count: (res.batch as IDataObject | undefined)?.new,
+						updated_count: (res.batch as IDataObject | undefined)?.updated,
+						duplicate_count: (res.batch as IDataObject | undefined)?.duplicate,
+					});
 					out.push({ json: res, pairedItem: { item: i } });
 					continue;
 				}
@@ -152,6 +167,7 @@ export class Takuhai implements INodeType {
 				if (operation === 'getMagnetLink') {
 					const infohash = String(this.getNodeParameter('infohash', i));
 					const res = await call('GET', `/magnets/${encodeURIComponent(infohash)}`);
+					Logger.info('Takuhai magnet lookup completed', { item_index: i, infohash });
 					out.push({ json: res, pairedItem: { item: i } });
 					continue;
 				}
@@ -161,15 +177,28 @@ export class Takuhai implements INodeType {
 				for (const body of payload.bodies) {
 					submitted.push(await submitOne(call, body));
 				}
+				Logger.info('Takuhai submissions completed', {
+					item_index: i,
+					submit_count: submitted.length,
+					conflict_count: submitted.filter((item) => item.ok === false).length,
+				});
 				out.push({
 					json: { items: submitted, count: submitted.length },
 					pairedItem: { item: i },
 				});
 			} catch (error) {
+				const meta = {
+					operation,
+					item_index: i,
+					status_code: statusCode(error),
+					err: (error as Error).message,
+				};
 				if (this.continueOnFail()) {
+					Logger.warn('Takuhai node item failed', meta);
 					out.push({ json: { error: (error as Error).message }, pairedItem: { item: i } });
 					continue;
 				}
+				Logger.debug('Takuhai node item failed', meta);
 				throw error;
 			}
 		}

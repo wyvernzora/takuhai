@@ -5,6 +5,7 @@ import type {
 	INodeTypeDescription,
 	IPollFunctions,
 } from 'n8n-workflow';
+import { LoggerProxy as Logger } from 'n8n-workflow';
 
 const CRED = 'takuhaiCrawlerApi';
 const MAX_PAGES_PER_POLL = 25;
@@ -15,6 +16,7 @@ type CrawlState = IDataObject & {
 	lastSeenPublishedAt?: string;
 	passStartedAt?: string;
 	pendingLastSeen?: string;
+	resetStateApplied?: boolean;
 };
 
 /**
@@ -74,7 +76,7 @@ export class TakuhaiCrawlerTrigger implements INodeType {
 						type: 'boolean',
 						default: false,
 						description:
-							"Clear this trigger node's saved cursor and watermark before polling. Disable after one run to avoid re-emitting the lookback window.",
+							"Clear this trigger node's saved cursor and watermark once while enabled. Toggle off and on to reset again.",
 					},
 				],
 			},
@@ -84,33 +86,54 @@ export class TakuhaiCrawlerTrigger implements INodeType {
 	async poll(this: IPollFunctions): Promise<INodeExecutionData[][] | null> {
 		const state = this.getWorkflowStaticData('node') as CrawlState;
 		const options = this.getNodeParameter('options', {}) as IDataObject;
-		if (options.resetState === true) {
+		if (options.resetState === true && state.resetStateApplied !== true) {
 			clearState(state);
+			state.resetStateApplied = true;
+			Logger.info('Takuhai crawler trigger state reset');
+		} else if (options.resetState !== true) {
+			state.resetStateApplied = false;
 		}
 
 		const batchSize = clampNumber(this.getNodeParameter('batchSize', 50), 1, 1000);
 		const pageSize = clampNumber(this.getNodeParameter('pageSize', 50), 1, 200);
-		const lookbackMs = parseDurationMs(String(this.getNodeParameter('lookback', '24h')));
+		const lookback = String(this.getNodeParameter('lookback', '24h'));
+		const lookbackMs = parseDurationMs(lookback);
 		startPassIfNeeded(state, new Date(), lookbackMs);
 
 		const credentials = await this.getCredentials(CRED);
 		const baseUrl = String(credentials.baseUrl).replace(/\/+$/, '');
 		const posts: IDataObject[] = [];
 		let finished = false;
+		let pagesFetched = 0;
 
 		for (let pages = 0; pages < MAX_PAGES_PER_POLL && posts.length < batchSize; pages++) {
 			const remaining = batchSize - posts.length;
+			const cursor = state.cursor ?? '';
+			Logger.info('Takuhai crawler trigger request started', {
+				page_index: pages,
+				cursor,
+				page_size: Math.min(pageSize, remaining),
+			});
 			const res = (await this.helpers.httpRequest({
 				method: 'POST',
 				url: `${baseUrl}/crawl`,
 				body: {
 					page_size: Math.min(pageSize, remaining),
-					cursor: state.cursor ?? '',
+					cursor,
 				},
 				json: true,
 			})) as IDataObject;
+			pagesFetched++;
 
 			const pagePosts = Array.isArray(res.posts) ? (res.posts as IDataObject[]) : [];
+			const nextCursor = typeof res.next_cursor === 'string' ? res.next_cursor : '';
+			Logger.info('Takuhai crawler trigger response received', {
+				page_index: pages,
+				cursor,
+				next_cursor: nextCursor,
+				post_count: pagePosts.length,
+				has_more: res.has_more === true,
+			});
 			for (const post of pagePosts) {
 				const publishedAt = publishedAtMs(post);
 				if (publishedAt !== undefined && publishedAt <= Date.parse(state.floor ?? '')) {
@@ -123,7 +146,6 @@ export class TakuhaiCrawlerTrigger implements INodeType {
 			}
 
 			if (finished) break;
-			const nextCursor = typeof res.next_cursor === 'string' ? res.next_cursor : '';
 			if (res.has_more !== true || nextCursor === '') {
 				finished = true;
 				break;
@@ -136,8 +158,19 @@ export class TakuhaiCrawlerTrigger implements INodeType {
 		}
 
 		if (posts.length === 0) {
+			Logger.debug('Takuhai crawler trigger poll completed with no posts', {
+				pages_fetched: pagesFetched,
+				finished,
+				cursor: state.cursor ?? '',
+			});
 			return null;
 		}
+		Logger.info('Takuhai crawler trigger emitted posts', {
+			post_count: posts.length,
+			pages_fetched: pagesFetched,
+			finished,
+			cursor: state.cursor ?? '',
+		});
 		return [[{ json: { posts, count: posts.length } }]];
 	}
 }

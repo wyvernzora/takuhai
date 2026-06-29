@@ -1,4 +1,11 @@
-import type { INodeType, INodeTypeDescription } from 'n8n-workflow';
+import type {
+	IDataObject,
+	IExecuteFunctions,
+	INodeExecutionData,
+	INodeType,
+	INodeTypeDescription,
+} from 'n8n-workflow';
+import { LoggerProxy as Logger } from 'n8n-workflow';
 
 /**
  * Takuhai Crawler — drives ANY takuhai-shaped crawler over the shared POST /crawl
@@ -22,12 +29,6 @@ export class TakuhaiCrawler implements INodeType {
 		inputs: ['main'],
 		outputs: ['main'],
 		credentials: [{ name: 'takuhaiCrawlerApi', required: true }],
-		requestDefaults: {
-			baseURL: '={{$credentials.baseUrl}}',
-			method: 'POST',
-			url: '/crawl',
-			headers: { 'Content-Type': 'application/json' },
-		},
 		properties: [
 			{
 				displayName: 'Resource',
@@ -52,7 +53,6 @@ export class TakuhaiCrawler implements INodeType {
 				typeOptions: { minValue: 1, maxValue: 200 },
 				default: 50,
 				description: 'Posts to fetch per call (1–200); the crawler clamps out-of-range values',
-				routing: { send: { type: 'body', property: 'page_size' } },
 			},
 			{
 				displayName: 'Cursor',
@@ -60,7 +60,6 @@ export class TakuhaiCrawler implements INodeType {
 				type: 'string',
 				default: '',
 				description: 'Opaque cursor from a prior call (n8n owns crawl state); blank to start',
-				routing: { send: { type: 'body', property: 'cursor' } },
 			},
 			{
 				displayName: 'Lookback',
@@ -70,8 +69,60 @@ export class TakuhaiCrawler implements INodeType {
 				placeholder: '12h',
 				description:
 					'Drop posts older than now − lookback (extended Go duration, e.g. 12h, 30d, 2w); blank = no time limit',
-				routing: { send: { type: 'body', property: 'lookback' } },
 			},
 		],
 	};
+
+	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
+		const items = this.getInputData();
+		const credentials = await this.getCredentials('takuhaiCrawlerApi');
+		const baseUrl = String(credentials.baseUrl).replace(/\/+$/, '');
+		const out: INodeExecutionData[] = [];
+
+		Logger.info('Takuhai crawler node execution started', { item_count: items.length });
+		for (let i = 0; i < items.length; i++) {
+			try {
+				const body = {
+					page_size: this.getNodeParameter('pageSize', i),
+					cursor: this.getNodeParameter('cursor', i),
+					lookback: this.getNodeParameter('lookback', i),
+				};
+				Logger.info('Takuhai crawler request started', {
+					item_index: i,
+					cursor: body.cursor,
+					page_size: body.page_size,
+					lookback: body.lookback,
+				});
+				const res = (await this.helpers.httpRequest({
+					method: 'POST',
+					url: `${baseUrl}/crawl`,
+					body,
+					json: true,
+				})) as IDataObject;
+				const posts = Array.isArray(res.posts) ? res.posts.length : 0;
+				Logger.info('Takuhai crawler page fetched', {
+					item_index: i,
+					post_count: posts,
+					has_more: res.has_more === true,
+					has_next_cursor: typeof res.next_cursor === 'string' && res.next_cursor !== '',
+					cursor: body.cursor,
+					next_cursor: typeof res.next_cursor === 'string' ? res.next_cursor : '',
+				});
+				out.push({ json: res, pairedItem: { item: i } });
+			} catch (error) {
+				const meta = {
+					item_index: i,
+					err: (error as Error).message,
+				};
+				if (this.continueOnFail()) {
+					Logger.warn('Takuhai crawler node item failed', meta);
+					out.push({ json: { error: (error as Error).message }, pairedItem: { item: i } });
+					continue;
+				}
+				Logger.debug('Takuhai crawler node item failed', meta);
+				throw error;
+			}
+		}
+		return [out];
+	}
 }
