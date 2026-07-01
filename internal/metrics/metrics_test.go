@@ -109,6 +109,24 @@ func TestQueueStatsErrorDoesNotFailScrape(t *testing.T) {
 	}
 }
 
+func TestTakuhaiPrecreatesDMHYIngestPostCounters(t *testing.T) {
+	m := NewTakuhai("v", "c", fakeQueueStats{})
+	rec := httptest.NewRecorder()
+
+	m.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", http.NoBody))
+	body, err := io.ReadAll(rec.Result().Body)
+	if err != nil {
+		t.Fatalf("read /metrics: %v", err)
+	}
+	text := string(body)
+	for _, result := range []string{"new", "updated", "duplicate", "conflict", "skipped", "error"} {
+		want := `takuhai_ingest_posts_total{result="` + result + `",source="dmhy"} 0`
+		if !strings.Contains(text, want) {
+			t.Fatalf("/metrics missing %q:\n%s", want, text)
+		}
+	}
+}
+
 func TestCatalogStatsScrape(t *testing.T) {
 	m := NewTakuhai("v", "c", fakeQueueStats{
 		catalog: store.CatalogStats{RawPosts: 7, Infohashes: 3, Refs: 2},

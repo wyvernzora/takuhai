@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/wyvernzora/takuhai/internal/store"
+	"github.com/wyvernzora/takuhai/pkg/rawpost"
 )
 
 type HTTP struct {
@@ -90,7 +91,7 @@ func NewTakuhai(version, commit string, qs queueStatsProvider) *Takuhai {
 	registerBuildInfo(reg, "takuhai", version, commit)
 	reg.MustRegister(&queueCollector{source: qs})
 	auto := promauto.With(reg)
-	return &Takuhai{
+	m := &Takuhai{
 		handler: promhttp.HandlerFor(reg, promhttp.HandlerOpts{}),
 		HTTP: newHTTP(reg, "takuhai", map[string]string{
 			"/healthz":     "/healthz",
@@ -173,6 +174,10 @@ func NewTakuhai(version, commit string, qs queueStatsProvider) *Takuhai {
 			Help:      "Total resolve_magnets infohash lookups.",
 		}, []string{"result"}),
 	}
+	for _, result := range []string{"new", "updated", "duplicate", "conflict", "skipped", "error"} {
+		m.ingestPosts.WithLabelValues(rawpost.SourceDMHY, result).Add(0)
+	}
+	return m
 }
 
 func (m *Takuhai) Handler() http.Handler { return m.handler }
