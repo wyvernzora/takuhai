@@ -4,7 +4,7 @@
   "description": "n8n nodes for takuhai — drive ingest, the queue match loop, and any takuhai-shaped crawler.",
   "keywords": ["n8n-community-node-package", "takuhai", "anime"],
   "license": "MIT",
-  "packageManager": "pnpm@10.6.5",
+  "packageManager": "pnpm@10.34.4",
   "engines": {
     "node": ">=20.15"
   },
