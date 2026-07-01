@@ -35,7 +35,7 @@
     "n8n-workflow": "*"
   },
   "devDependencies": {
-    "@types/node": "^22.10.0",
+    "@types/node": "^24.0.0",
     "n8n-workflow": "*",
     "typescript": "^5.7.2"
   }
