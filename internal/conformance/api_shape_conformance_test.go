@@ -24,6 +24,7 @@ func (c *fakeClock) Advance(d time.Duration) { c.now = c.now.Add(d) }
 const (
 	apiIH1 = "0123456789abcdef0123456789abcdef01234567"
 	apiIH2 = "abcdefabcdefabcdefabcdefabcdefabcdefabcd"
+	apiIH3 = "fedcbafedcbafedcbafedcbafedcbafedcbafedc"
 )
 
 func TestAPIShape_MatchListsReleaseAndResolvesMagnet(t *testing.T) {
@@ -53,6 +54,19 @@ func TestAPIShape_MatchListsReleaseAndResolvesMagnet(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Submit matched: %v", err)
 	}
+	clock.Advance(time.Minute)
+	seedRelease(t, ctx, st, apiIH2, "api-2", clock.now)
+	second := claimOne(t, ctx, st, 60)
+	if err := st.Submit(ctx, store.SubmitParams{
+		Infohash:   apiIH2,
+		ClaimToken: second.ClaimToken,
+		Status:     "matched",
+		Ref:        "tvdb:999",
+		Confidence: ptr(0.81),
+		Reason:     "title matches other ref",
+	}); err != nil {
+		t.Fatalf("Submit second matched: %v", err)
+	}
 
 	d := dispatch.New(st)
 	res, err := d.ListReleases(ctx, mustJSON(t, map[string]any{"ref": "tvdb:123"}))
@@ -62,6 +76,7 @@ func TestAPIShape_MatchListsReleaseAndResolvesMagnet(t *testing.T) {
 	var listed struct {
 		Releases []struct {
 			Infohash   string  `json:"infohash"`
+			Ref        string  `json:"ref"`
 			Confidence float64 `json:"confidence"`
 		} `json:"releases"`
 	}
@@ -71,11 +86,29 @@ func TestAPIShape_MatchListsReleaseAndResolvesMagnet(t *testing.T) {
 	if len(listed.Releases) != 1 || listed.Releases[0].Infohash != apiIH1 {
 		t.Fatalf("list_releases = %+v, want %s", listed.Releases, apiIH1)
 	}
+	if listed.Releases[0].Ref != "tvdb:123" {
+		t.Fatalf("ref = %q, want tvdb:123", listed.Releases[0].Ref)
+	}
 	if listed.Releases[0].Confidence != 0.94 {
 		t.Fatalf("confidence = %v, want 0.94", listed.Releases[0].Confidence)
 	}
 
-	magRes, err := d.ResolveMagnets(ctx, mustJSON(t, map[string]any{"infohashes": []string{apiIH1, apiIH2}}))
+	res, err = d.ListReleases(ctx, mustJSON(t, map[string]any{}))
+	if err != nil {
+		t.Fatalf("ListReleases unfiltered: %v", err)
+	}
+	listed.Releases = nil
+	if err := json.Unmarshal(res, &listed); err != nil {
+		t.Fatalf("decode unfiltered list_releases: %v", err)
+	}
+	if len(listed.Releases) != 2 || listed.Releases[0].Infohash != apiIH2 || listed.Releases[1].Infohash != apiIH1 {
+		t.Fatalf("unfiltered list_releases = %+v, want newest %s then %s", listed.Releases, apiIH2, apiIH1)
+	}
+	if listed.Releases[0].Ref != "tvdb:999" || listed.Releases[1].Ref != "tvdb:123" {
+		t.Fatalf("unfiltered refs = %+v, want tvdb:999 then tvdb:123", listed.Releases)
+	}
+
+	magRes, err := d.ResolveMagnets(ctx, mustJSON(t, map[string]any{"infohashes": []string{apiIH1, apiIH3}}))
 	if err != nil {
 		t.Fatalf("ResolveMagnets: %v", err)
 	}
@@ -89,8 +122,8 @@ func TestAPIShape_MatchListsReleaseAndResolvesMagnet(t *testing.T) {
 	if got == "" || !strings.Contains(got, "&tr=") {
 		t.Fatalf("resolved magnet = %q, want stored full magnet with trackers", got)
 	}
-	if _, ok := resolved.Magnets[apiIH2]; ok {
-		t.Fatalf("resolve_magnets included unknown infohash %s", apiIH2)
+	if _, ok := resolved.Magnets[apiIH3]; ok {
+		t.Fatalf("resolve_magnets included unknown infohash %s", apiIH3)
 	}
 }
 

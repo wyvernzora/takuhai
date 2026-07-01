@@ -41,7 +41,7 @@ func TestToolsAdvertiseEmbeddedDocs(t *testing.T) {
 		descriptions[tool.Name] = tool.Description
 	}
 	for name, want := range map[string]string{
-		"list_releases":   "Return matched releases for one canonical ref",
+		"list_releases":   "Return matched releases, newest first",
 		"resolve_magnets": "Resolve infohashes into stored magnet URIs",
 	} {
 		got := descriptions[name]
@@ -71,7 +71,7 @@ func TestToolsAdvertiseTypedInputSchemas(t *testing.T) {
 		schemas[tool.Name] = schema
 	}
 
-	assertRequiredProperty(t, schemas["list_releases"], "ref")
+	assertOptionalProperty(t, schemas["list_releases"], "ref")
 	assertOptionalProperty(t, schemas["list_releases"], "limit")
 	assertOptionalProperty(t, schemas["list_releases"], "cursor")
 	assertRequiredProperty(t, schemas["resolve_magnets"], "infohashes")
@@ -173,9 +173,10 @@ func assertRequiredProperty(t *testing.T, schema map[string]any, name string) {
 func assertOptionalProperty(t *testing.T, schema map[string]any, name string) {
 	t.Helper()
 	assertProperty(t, schema, name)
-	for _, v := range schema["required"].([]any) {
+	required, _ := schema["required"].([]any)
+	for _, v := range required {
 		if v == name {
-			t.Fatalf("schema required = %v, want %q optional", schema["required"], name)
+			t.Fatalf("schema required = %v, want %q optional", required, name)
 		}
 	}
 }
@@ -208,8 +209,10 @@ func (f *fakeStore) CatalogStats(context.Context) (store.CatalogStats, error) {
 	return store.CatalogStats{}, nil
 }
 func (f *fakeStore) ListReleases(_ context.Context, q store.ReleaseQuery) (store.ReleasePage, error) {
-	if err := cursor.ValidateRef(q.Ref); err != nil {
-		return store.ReleasePage{}, err
+	if q.Ref != "" {
+		if err := cursor.ValidateRef(q.Ref); err != nil {
+			return store.ReleasePage{}, err
+		}
 	}
 	return store.ReleasePage{}, nil
 }

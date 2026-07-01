@@ -64,7 +64,7 @@ type QueueStatsResult struct {
 }
 
 type ListReleasesRequest struct {
-	Ref    string     `json:"ref" jsonschema:"opaque metadata ref in namespace:value form"`
+	Ref    string     `json:"ref,omitempty" jsonschema:"optional opaque metadata ref in namespace:value form; omit to list recent matched releases across all refs"`
 	Since  *time.Time `json:"since,omitempty" jsonschema:"RFC3339 timestamp; when present, page by first matched time"`
 	Limit  int        `json:"limit,omitempty" jsonschema:"maximum releases to return; server defaults and caps apply"`
 	Cursor string     `json:"cursor,omitempty" jsonschema:"opaque next_cursor from the previous response"`
@@ -72,6 +72,7 @@ type ListReleasesRequest struct {
 
 type ReleaseItemResult struct {
 	Infohash    string   `json:"infohash"`
+	Ref         string   `json:"ref"`
 	Title       string   `json:"title"`
 	SizeBytes   int64    `json:"size_bytes"`
 	PublishedAt string   `json:"published_at"`
@@ -215,6 +216,7 @@ func (d *Dispatcher) ListReleasesTyped(ctx context.Context, req ListReleasesRequ
 	for _, r := range page.Releases {
 		out.Releases = append(out.Releases, ReleaseItemResult{
 			Infohash:    r.Infohash,
+			Ref:         r.Ref,
 			Title:       r.Title,
 			SizeBytes:   r.SizeBytes,
 			PublishedAt: r.PublishedAt.Format(time.RFC3339Nano),

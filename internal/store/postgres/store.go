@@ -460,8 +460,10 @@ func (s *Store) CatalogStats(ctx context.Context) (store.CatalogStats, error) {
 }
 
 func (s *Store) ListReleases(ctx context.Context, q store.ReleaseQuery) (store.ReleasePage, error) {
-	if err := cursor.ValidateRef(q.Ref); err != nil {
-		return store.ReleasePage{}, err
+	if q.Ref != "" {
+		if err := cursor.ValidateRef(q.Ref); err != nil {
+			return store.ReleasePage{}, err
+		}
 	}
 	limit := q.Limit
 	if limit <= 0 {
@@ -489,30 +491,7 @@ func (s *Store) ListReleases(ctx context.Context, q store.ReleaseQuery) (store.R
 		seekKey, seekHash, hasSeek = seek.Key, seek.Infohash, true
 	}
 
-	var rows pgx.Rows
-	var err error
-	if path == cursor.PathCatalog {
-		rows, err = s.pool.Query(ctx, `
-			SELECT infohash, title, COALESCE(size_bytes, 0), published_at,
-				COALESCE(confidence, 0), sources, published_at
-			FROM releases
-			WHERE match_status = 'matched' AND ref = $1
-				AND (NOT $4 OR (published_at, infohash) < ($2, $3))
-			ORDER BY published_at DESC, infohash DESC
-			LIMIT $5
-		`, q.Ref, seekKey, seekHash, hasSeek, fetch)
-	} else {
-		rows, err = s.pool.Query(ctx, `
-			SELECT infohash, title, COALESCE(size_bytes, 0), published_at,
-				COALESCE(confidence, 0), sources, first_matched_at
-			FROM releases
-			WHERE match_status = 'matched' AND ref = $1
-				AND first_matched_at > $2
-				AND (NOT $5 OR (first_matched_at, infohash) < ($3, $4))
-			ORDER BY first_matched_at DESC, infohash DESC
-			LIMIT $6
-		`, q.Ref, *q.Since, seekKey, seekHash, hasSeek, fetch)
-	}
+	rows, err := s.listReleaseRows(ctx, q, path, seekKey, seekHash, hasSeek, fetch)
 	if err != nil {
 		return store.ReleasePage{}, fmt.Errorf("list_releases %s: %w", q.Ref, err)
 	}
@@ -523,7 +502,7 @@ func (s *Store) ListReleases(ctx context.Context, q store.ReleaseQuery) (store.R
 	}
 	keyed, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (keyedRow, error) {
 		var kr keyedRow
-		err := row.Scan(&kr.item.Infohash, &kr.item.Title, &kr.item.SizeBytes,
+		err := row.Scan(&kr.item.Infohash, &kr.item.Ref, &kr.item.Title, &kr.item.SizeBytes,
 			&kr.item.PublishedAt, &kr.item.Confidence, &kr.item.Sources, &kr.key)
 		return kr, err
 	})
@@ -551,6 +530,53 @@ func (s *Store) ListReleases(ctx context.Context, q store.ReleaseQuery) (store.R
 		next = enc
 	}
 	return store.ReleasePage{Releases: items, NextCursor: next}, nil
+}
+
+func (s *Store) listReleaseRows(ctx context.Context, q store.ReleaseQuery, path cursor.Path, seekKey time.Time, seekHash string, hasSeek bool, fetch int) (pgx.Rows, error) {
+	if path == cursor.PathCatalog {
+		if q.Ref == "" {
+			return s.pool.Query(ctx, `
+				SELECT infohash, COALESCE(ref, ''), title, COALESCE(size_bytes, 0), published_at,
+					COALESCE(confidence, 0), sources, published_at
+				FROM releases
+				WHERE match_status = 'matched'
+					AND (NOT $3 OR (published_at, infohash) < ($1, $2))
+				ORDER BY published_at DESC, infohash DESC
+				LIMIT $4
+			`, seekKey, seekHash, hasSeek, fetch)
+		}
+		return s.pool.Query(ctx, `
+			SELECT infohash, COALESCE(ref, ''), title, COALESCE(size_bytes, 0), published_at,
+				COALESCE(confidence, 0), sources, published_at
+			FROM releases
+			WHERE match_status = 'matched' AND ref = $1
+				AND (NOT $4 OR (published_at, infohash) < ($2, $3))
+			ORDER BY published_at DESC, infohash DESC
+			LIMIT $5
+		`, q.Ref, seekKey, seekHash, hasSeek, fetch)
+	}
+	if q.Ref == "" {
+		return s.pool.Query(ctx, `
+			SELECT infohash, COALESCE(ref, ''), title, COALESCE(size_bytes, 0), published_at,
+				COALESCE(confidence, 0), sources, first_matched_at
+			FROM releases
+			WHERE match_status = 'matched'
+				AND first_matched_at > $1
+				AND (NOT $4 OR (first_matched_at, infohash) < ($2, $3))
+			ORDER BY first_matched_at DESC, infohash DESC
+			LIMIT $5
+		`, *q.Since, seekKey, seekHash, hasSeek, fetch)
+	}
+	return s.pool.Query(ctx, `
+		SELECT infohash, COALESCE(ref, ''), title, COALESCE(size_bytes, 0), published_at,
+			COALESCE(confidence, 0), sources, first_matched_at
+		FROM releases
+		WHERE match_status = 'matched' AND ref = $1
+			AND first_matched_at > $2
+			AND (NOT $5 OR (first_matched_at, infohash) < ($3, $4))
+		ORDER BY first_matched_at DESC, infohash DESC
+		LIMIT $6
+	`, q.Ref, *q.Since, seekKey, seekHash, hasSeek, fetch)
 }
 
 func (s *Store) ResolveMagnets(ctx context.Context, infohashes []string) (map[string]string, error) {

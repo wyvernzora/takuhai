@@ -48,7 +48,9 @@ func (m *HTTP) Wrap(next http.Handler) http.Handler {
 		path := m.route(r.URL.Path)
 		status := strconv.Itoa(captured.Code)
 		m.requests.WithLabelValues(r.Method, path, status).Inc()
-		m.duration.WithLabelValues(r.Method, path).Observe(time.Since(start).Seconds())
+		if r.Method != http.MethodGet || path != "/mcp" {
+			m.duration.WithLabelValues(r.Method, path).Observe(time.Since(start).Seconds())
+		}
 	})
 }
 

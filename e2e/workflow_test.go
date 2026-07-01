@@ -350,8 +350,8 @@ func assertMCP(t *testing.T, ctx context.Context, takuhaiURL, wantMagnet string)
 	if _, ok := release.Raw["magnet"]; ok {
 		t.Fatalf("list_releases leaked magnet field: %+v", release.Raw)
 	}
-	if _, ok := release.Raw["ref"]; ok {
-		t.Fatalf("list_releases leaked ref field: %+v", release.Raw)
+	if release.Raw["ref"] != "tvdb:12345" {
+		t.Fatalf("list_releases ref = %v, want tvdb:12345", release.Raw["ref"])
 	}
 	empty := callTool[listReleasesResponse](t, ctx, session, "list_releases", map[string]any{"ref": "tvdb:99999", "limit": 10})
 	if len(empty.Releases) != 0 {
