@@ -27,7 +27,7 @@ RUN corepack pnpm build
 RUN mkdir -p /pkg && cp -r package.json dist /pkg/
 
 # ---- init image ----
-FROM busybox:1.37-musl
+FROM busybox:1.38-musl
 LABEL org.opencontainers.image.source="https://github.com/wyvernzora/takuhai"
 COPY --from=build /pkg /takuhai-nodes
 COPY integrations/n8n/entrypoint.sh /entrypoint.sh
