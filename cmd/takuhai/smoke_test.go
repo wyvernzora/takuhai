@@ -208,6 +208,7 @@ func TestSmoke(t *testing.T) {
 		var env struct {
 			Releases []struct {
 				Infohash string `json:"infohash"`
+				Ref      string `json:"ref"`
 			} `json:"releases"`
 		}
 		if err := json.Unmarshal([]byte(firstText(res)), &env); err != nil {
@@ -215,6 +216,9 @@ func TestSmoke(t *testing.T) {
 		}
 		if len(env.Releases) != 1 || env.Releases[0].Infohash != smokeHexInfohash {
 			t.Fatalf("list_releases = %+v, want smoke release", env.Releases)
+		}
+		if env.Releases[0].Ref != "tvdb:12345" {
+			t.Fatalf("list_releases ref = %q, want tvdb:12345", env.Releases[0].Ref)
 		}
 	})
 

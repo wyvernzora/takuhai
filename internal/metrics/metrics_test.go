@@ -45,6 +45,28 @@ func TestHTTPWrapRecordsRouteAndStatus(t *testing.T) {
 	}
 }
 
+func TestHTTPWrapSkipsMCPStreamDuration(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := newHTTP(reg, "testapp", map[string]string{"/mcp": "/mcp"})
+	handler := m.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	}))
+
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/mcp", http.NoBody))
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/mcp", http.NoBody))
+
+	if got := testutil.ToFloat64(m.requests.WithLabelValues(http.MethodGet, "/mcp", "202")); got != 1 {
+		t.Fatalf("GET /mcp request count = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(m.requests.WithLabelValues(http.MethodPost, "/mcp", "202")); got != 1 {
+		t.Fatalf("POST /mcp request count = %v, want 1", got)
+	}
+	if got := testutil.CollectAndCount(m.duration); got != 1 {
+		t.Fatalf("HTTP duration series count = %d, want only POST /mcp", got)
+	}
+	assertHistogramCount(t, m.duration.WithLabelValues(http.MethodPost, "/mcp"), 1)
+}
+
 func TestConstructorsUseIndependentRegistries(t *testing.T) {
 	q := fakeQueueStats{}
 	_ = NewTakuhai("v", "c", q)
@@ -133,5 +155,16 @@ func assertHistogram(t *testing.T, metric prometheus.Observer, count uint64, sum
 	h := pb.GetHistogram()
 	if h.GetSampleCount() != count || h.GetSampleSum() != sum {
 		t.Fatalf("histogram = count %d sum %v, want count %d sum %v", h.GetSampleCount(), h.GetSampleSum(), count, sum)
+	}
+}
+
+func assertHistogramCount(t *testing.T, metric prometheus.Observer, count uint64) {
+	t.Helper()
+	var pb dto.Metric
+	if err := metric.(prometheus.Metric).Write(&pb); err != nil {
+		t.Fatalf("write histogram: %v", err)
+	}
+	if pb.GetHistogram().GetSampleCount() != count {
+		t.Fatalf("histogram count = %d, want %d", pb.GetHistogram().GetSampleCount(), count)
 	}
 }

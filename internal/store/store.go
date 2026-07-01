@@ -114,6 +114,7 @@ type ReleasePage struct {
 
 type ReleaseItem struct {
 	Infohash    string
+	Ref         string
 	Title       string
 	SizeBytes   int64
 	PublishedAt time.Time

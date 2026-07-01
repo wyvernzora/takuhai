@@ -2,7 +2,7 @@
 
 takuhai is a durable anime release index: it stores crawled release posts, leases
 unmatched releases to an external matcher, records the matcher outcome, and lets a
-consumer agent list matched releases by canonical ref.
+consumer agent list matched releases with optional canonical-ref filtering.
 
 ## Invariants
 
@@ -97,8 +97,8 @@ marked exhausted before new claims are offered. Claim crashes do not increment
 
 The MCP surface is read-only:
 
-- `list_releases({ref, since?, limit?, cursor?})` returns matched releases with
-  `infohash`, `title`, `size_bytes`, `published_at`, `confidence`, `sources`, and
+- `list_releases({ref?, since?, limit?, cursor?})` returns matched releases, optionally filtered by ref, with
+  `infohash`, `ref`, `title`, `size_bytes`, `published_at`, `confidence`, `sources`, and
   `next_cursor`.
 - `resolve_magnets({infohashes})` returns `{ "magnets": { "<infohash>": "<magnet>" } }`.
   Unknown infohashes and known releases without magnets are omitted.
