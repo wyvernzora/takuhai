@@ -2,7 +2,7 @@
 // shape exchanged between a crawler's POST /crawl response and takuhai's
 // POST /ingest request, plus the IngestSummary that POST /ingest returns. It is
 // a leaf — it imports nothing internal — so both the takuhai service module and
-// the nested sources/dmhy crawler module can depend on it without coupling.
+// the nested crawler modules can depend on it without coupling.
 package rawpost
 
 import "time"
@@ -11,6 +11,20 @@ import "time"
 // wire contract) so the takuhai service and its tests never import the foreign
 // sources/dmhy crawler module just to name the source.
 const SourceDMHY = "dmhy"
+
+// SourceNyaa is the stable Nyaa source identifier.
+const SourceNyaa = "nyaa"
+
+var knownSources = []string{SourceDMHY, SourceNyaa}
+
+// Sources returns the canonical registry of source identifiers known to the
+// shared wire contract.
+//
+// Adding a new source still requires manual edits to: go.work; Makefile MODULES;
+// the CI/release module and image lists; Dockerfile ADDR envs; compose.yaml.
+func Sources() []string {
+	return append([]string(nil), knownSources...)
+}
 
 // RawPost is one crawled post: the POST /crawl-response ↔ POST /ingest-request
 // shape. The crawler is DUMB — it emits raw fields (title, magnet, metadata,

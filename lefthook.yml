@@ -15,17 +15,29 @@ pre-commit:
           exit 1
         fi
     go-work-sync:
+      env:
+        TAKUHAI_MODULES: &takuhai_modules ". sources/dmhy sources/nyaa"
       run: |
         go work sync
-        git diff --exit-code -- go.mod go.sum go.work go.work.sum sources/dmhy/go.mod sources/dmhy/go.sum
+        paths="go.work go.work.sum"
+        for m in $TAKUHAI_MODULES; do
+          if [ "$m" = "." ]; then
+            paths="$paths go.mod go.sum"
+          else
+            paths="$paths $m/go.mod $m/go.sum"
+          fi
+        done
+        git diff --exit-code -- $paths
     go:
+      env:
+        TAKUHAI_MODULES: *takuhai_modules
       run: |
         if ! command -v golangci-lint >/dev/null 2>&1; then
           echo "golangci-lint not found. Install it with:" >&2
           echo "  go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2" >&2
           exit 127
         fi
-        for m in . sources/dmhy; do
+        for m in $TAKUHAI_MODULES; do
           echo "==> module $m"
           (cd "$m" \
             && go vet ./... \
@@ -35,9 +47,20 @@ pre-commit:
             && golangci-lint run ./...) || exit 1
         done
     binaries:
+      env:
+        TAKUHAI_MODULES: *takuhai_modules
       run: |
-        go build -trimpath -o bin/takuhai ./cmd/takuhai
-        (cd sources/dmhy && go build -trimpath -o ../../bin/takuhai-dmhy ./cmd/takuhai-dmhy)
+        for m in $TAKUHAI_MODULES; do
+          if [ "$m" = "." ]; then
+            name=takuhai
+            out=bin/takuhai
+          else
+            name=takuhai-$(basename "$m")
+            out=../../bin/$name
+          fi
+          echo "==> go build $name ($m)"
+          (cd "$m" && go build -trimpath -o "$out" "./cmd/$name") || exit 1
+        done
     smoke:
       run: go test -tags=smoke -run TestSmoke -count=1 ./cmd/takuhai
     n8n:

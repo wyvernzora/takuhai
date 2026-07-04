@@ -83,6 +83,7 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
+      # Keep this in sync with ci.yml's image-plan job; CI fails if it drifts.
       matrix:
         include:
           - component: takuhai
@@ -101,6 +102,14 @@ jobs:
               BUILD_DIR=sources/dmhy
               CMD_PKG=./cmd/takuhai-dmhy
             description: DMHY stateless crawler (POST /crawl)
+          - component: crawler-nyaa
+            image: ghcr.io/${{ github.repository }}/crawler-nyaa
+            context: .
+            file: Dockerfile
+            build_args: |
+              BUILD_DIR=sources/nyaa
+              CMD_PKG=./cmd/takuhai-nyaa
+            description: Nyaa stateless crawler (POST /crawl)
           - component: n8n-nodes
             image: ghcr.io/${{ github.repository }}/n8n-nodes
             context: .

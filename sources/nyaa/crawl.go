@@ -1,4 +1,4 @@
-package dmhy
+package nyaa
 
 import (
 	"context"
@@ -9,8 +9,8 @@ import (
 	"github.com/wyvernzora/takuhai/pkg/rawpost"
 )
 
-// PageFetcher fetches the raw bytes for a 1-based DMHY page number and sort_id.
-type PageFetcher func(ctx context.Context, sortID, page int) (body []byte, err error)
+// PageFetcher fetches the raw HTML bytes for a 1-based Nyaa result page.
+type PageFetcher func(ctx context.Context, page int) (body []byte, err error)
 
 // CrawlRequest is the POST /crawl request body.
 type CrawlRequest = crawl.CrawlRequest
@@ -26,20 +26,17 @@ type CrawlResponse struct {
 	lastPage     int    `json:"-"`
 }
 
-// Crawler is the stateless DMHY crawl engine behind POST /crawl.
+// Crawler is the stateless Nyaa crawl engine behind POST /crawl.
 type Crawler struct {
 	fetch     PageFetcher
 	threshold int
-	sortID    int
 	now       func() time.Time
 	metrics   *metrics.Crawler
 }
 
-// NewCrawler constructs a stateless crawler over a page fetcher and the
-// consecutive-empty threshold N. sortID defaults to 0 (the bare-path archive walk);
-// the clock defaults to time.Now.
+// NewCrawler constructs a stateless crawler over a page fetcher.
 func NewCrawler(fetch PageFetcher, threshold int) *Crawler {
-	return &Crawler{fetch: fetch, threshold: threshold, sortID: 0, now: time.Now}
+	return &Crawler{fetch: fetch, threshold: threshold, now: time.Now}
 }
 
 func (c *Crawler) Crawl(ctx context.Context, req CrawlRequest, lookback time.Duration) (CrawlResponse, error) {
@@ -48,6 +45,18 @@ func (c *Crawler) Crawl(ctx context.Context, req CrawlRequest, lookback time.Dur
 		return CrawlResponse{}, err
 	}
 	return crawlResponse(resp), nil
+}
+
+func (c *Crawler) shared() *crawl.Crawler {
+	return crawl.NewCrawler(crawl.Config{
+		Source:      "nyaa",
+		Fetch:       crawl.PageFetcher(c.fetch),
+		Parse:       ParseListingPage,
+		Threshold:   c.threshold,
+		FloorReason: "feed_floor",
+		Now:         c.now,
+		Metrics:     c.metrics,
+	})
 }
 
 func crawlResponse(resp crawl.CrawlResponse) CrawlResponse {
@@ -62,7 +71,7 @@ func crawlResponse(resp crawl.CrawlResponse) CrawlResponse {
 }
 
 func parseCursor(cursor string) (page, offset int, err error) {
-	return crawl.ParseCursor("dmhy", cursor)
+	return crawl.ParseCursor("nyaa", cursor)
 }
 
 func formatCursor(page, offset int) string {

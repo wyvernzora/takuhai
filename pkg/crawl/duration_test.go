@@ -1,4 +1,4 @@
-package dmhy
+package crawl
 
 import (
 	"testing"
@@ -43,18 +43,18 @@ func TestParseLookback(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
-			got, err := parseLookback(tt.in)
+			got, err := ParseLookback("dmhy", tt.in)
 			if tt.wantErr {
 				if err == nil {
-					t.Fatalf("parseLookback(%q) = %v, nil; want error", tt.in, got)
+					t.Fatalf("ParseLookback(%q) = %v, nil; want error", tt.in, got)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("parseLookback(%q): unexpected error %v", tt.in, err)
+				t.Fatalf("ParseLookback(%q): unexpected error %v", tt.in, err)
 			}
 			if got != tt.want {
-				t.Fatalf("parseLookback(%q) = %v, want %v", tt.in, got, tt.want)
+				t.Fatalf("ParseLookback(%q) = %v, want %v", tt.in, got, tt.want)
 			}
 		})
 	}

@@ -1,4 +1,4 @@
-module github.com/wyvernzora/takuhai/sources/dmhy
+module github.com/wyvernzora/takuhai/sources/nyaa
 
 go 1.26.3
 

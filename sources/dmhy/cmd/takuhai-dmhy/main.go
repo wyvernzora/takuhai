@@ -203,7 +203,7 @@ func (c *ServeCmd) Run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	metricsSrv := metrics.NewDMHY(version, commit)
+	metricsSrv := metrics.NewCrawler("takuhai_dmhy", "DMHY", version, commit)
 	srv := dmhy.NewServerWithMetricsAndLogger(c.BaseURL, c.SortID, c.RateRPS, c.CacheTTL, metricsSrv, logger.With("component", "crawler"))
 
 	mux := http.NewServeMux()

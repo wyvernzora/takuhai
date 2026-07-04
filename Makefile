@@ -2,9 +2,9 @@ GO_PACKAGES := ./...
 GOFMT_DIRS  := cmd internal pkg sources
 
 # The module roots in the workspace. A root-only `./...` does not descend into
-# the nested sources/dmhy module (go.work is not traversed by `./...`), so the
-# per-module targets below loop over both roots.
-MODULES := . sources/dmhy
+# the nested source modules (go.work is not traversed by `./...`), so the
+# per-module targets below loop over every module root.
+MODULES := . sources/dmhy sources/nyaa
 
 # VERSION and COMMIT stamp the binary via -ldflags.
 # Defaults to `git describe` so dev builds carry a meaningful identifier
@@ -28,8 +28,17 @@ GOLANGCI_LINT ?= $(shell if command -v golangci-lint >/dev/null 2>&1; then \
 .PHONY: build check devserver e2e fmt lint test vet smoke hooks
 
 build:
-	go build -trimpath -ldflags='$(GO_LDFLAGS)' -o bin/takuhai ./cmd/takuhai
-	cd sources/dmhy && go build -trimpath -ldflags='$(GO_LDFLAGS)' -o ../../bin/takuhai-dmhy ./cmd/takuhai-dmhy
+	@for m in $(MODULES); do \
+		if [ "$$m" = "." ]; then \
+			name=takuhai; \
+			out=bin/takuhai; \
+		else \
+			name=takuhai-$$(basename "$$m"); \
+			out=../../bin/$$name; \
+		fi; \
+		echo "==> go build $$name ($$m)"; \
+		(cd "$$m" && go build -trimpath -ldflags='$(GO_LDFLAGS)' -o "$$out" "./cmd/$$name") || exit 1; \
+	done
 
 fmt:
 	gofmt -w $(GOFMT_DIRS)

@@ -29,7 +29,7 @@ jobs:
       # which would silently auto-fix CI runs; here we use `-l` to list
       # offenders without mutation and fail when the list is non-empty.
       # The dir set spans every module's source roots (root + nested
-      # sources/dmhy) — gofmt walks paths, so the workspace boundary does
+      # sources/*) — gofmt walks paths, so the workspace boundary does
       # not matter, but the new pkg/ and sources/ trees must be listed.
       - name: gofmt
         run: |
@@ -42,7 +42,7 @@ jobs:
 
       # go.work drift check. A stale workspace (a `use` added without a
       # matching `go work sync`) would otherwise pass CI silently. The
-      # crawler module (sources/dmhy) does pull a cross-module external dep
+      # crawler modules do pull cross-module external deps
       # (golang.org/x/time), but the two modules share no *overlapping*
       # dependency whose version needs workspace-level resolution, so
       # `go work sync` is a no-op here and generates no go.work.sum — the
@@ -54,7 +54,7 @@ jobs:
           git diff --exit-code
 
       # Per-module loop: a root-only `./...` does NOT descend into the
-      # nested sources/dmhy module (go.work is not traversed by `./...`),
+      # nested source modules (go.work is not traversed by `./...`),
       # so vet/build/test/lint each run once per module root. The
       # `-tags=conformance` build is a hard gate that catches a partial
       # reshape (a dangling symbol left after a deletion compiles only if
@@ -69,7 +69,10 @@ jobs:
 
       - name: per-module vet / build / test / lint
         run: |
-          for m in . sources/dmhy; do
+          while IFS= read -r dir; do
+            m="${dir#$PWD}"
+            m="${m#/}"
+            [ -n "$m" ] || m="."
             echo "::group::module $m"
             (cd "$m" \
               && go vet ./... \
@@ -78,12 +81,24 @@ jobs:
               && go test -race -count=1 -tags=conformance ./... \
               && golangci-lint run ./...) || { echo "::error::module $m failed"; exit 1; }
             echo "::endgroup::"
-          done
+          done < <(go list -m -f '{{.Dir}}')
 
       - name: go build (binaries)
         run: |
-          go build -trimpath -o bin/takuhai ./cmd/takuhai
-          (cd sources/dmhy && go build -trimpath -o ../../bin/takuhai-dmhy ./cmd/takuhai-dmhy)
+          while IFS= read -r dir; do
+            m="${dir#$PWD}"
+            m="${m#/}"
+            if [ -z "$m" ]; then
+              m="."
+              name=takuhai
+              out=bin/takuhai
+            else
+              name=takuhai-$(basename "$m")
+              out=../../bin/$name
+            fi
+            echo "==> go build $name ($m)"
+            (cd "$m" && go build -trimpath -o "$out" "./cmd/$name") || exit 1
+          done < <(go list -m -f '{{.Dir}}')
 
   # Real-binary smoke (cmd/takuhai/smoke_test.go, //go:build smoke) — the highest-
   # fidelity gate over the DEPLOYABLE binary, the one shape the conformance suite cannot
@@ -164,8 +179,8 @@ jobs:
       packages: write
     outputs:
       version: ${{ steps.version.outputs.value }}
-    # Three images, published together on the same VERSION so the n8n nodes never
-    # drift from the service they call: the takuhai service + the DMHY crawler (one
+    # Images are published together on the same VERSION so the n8n nodes never
+    # drift from the service they call: the takuhai service + crawler images (one
     # parametric Go Dockerfile, selected by build-args) and the n8n custom-nodes init
     # image (its own Dockerfile under integrations/n8n). The crawler + nodes images
     # nest under the repo path so names never collide.
@@ -189,6 +204,14 @@ jobs:
               BUILD_DIR=sources/dmhy
               CMD_PKG=./cmd/takuhai-dmhy
             description: DMHY stateless crawler (POST /crawl)
+          - component: crawler-nyaa
+            image: ghcr.io/${{ github.repository }}/crawler-nyaa
+            context: .
+            file: Dockerfile
+            build_args: |
+              BUILD_DIR=sources/nyaa
+              CMD_PKG=./cmd/takuhai-nyaa
+            description: Nyaa stateless crawler (POST /crawl)
           - component: n8n-nodes
             image: ghcr.io/${{ github.repository }}/n8n-nodes
             context: .
@@ -265,15 +288,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # GHCR package names, NOT image suffixes. The nested images push to
-        # ghcr.io/<owner>/<repo>/<suffix>, and the path segments under the owner ARE
-        # the package name — so e.g. the crawler package is "<repo>/crawler-dmhy"
-        # (e.g. takuhai/crawler-dmhy), not the bare "crawler-dmhy".
-        # github.event.repository.name resolves to <repo> on a push event, keeping
-        # this correct if the repo is ever renamed.
         package:
           - ${{ github.event.repository.name }}
           - ${{ github.event.repository.name }}/crawler-dmhy
+          - ${{ github.event.repository.name }}/crawler-nyaa
           - ${{ github.event.repository.name }}/n8n-nodes
     steps:
       - name: Delete untagged versions, keep last 10

@@ -174,8 +174,10 @@ func NewTakuhai(version, commit string, qs queueStatsProvider) *Takuhai {
 			Help:      "Total resolve_magnets infohash lookups.",
 		}, []string{"result"}),
 	}
-	for _, result := range []string{"new", "updated", "duplicate", "conflict", "skipped", "error"} {
-		m.ingestPosts.WithLabelValues(rawpost.SourceDMHY, result).Add(0)
+	for _, source := range rawpost.Sources() {
+		for _, result := range []string{"new", "updated", "duplicate", "conflict", "skipped", "error"} {
+			m.ingestPosts.WithLabelValues(source, result).Add(0)
+		}
 	}
 	return m
 }
@@ -343,7 +345,8 @@ func (c *queueCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 }
 
-type DMHY struct {
+// Crawler records Prometheus metrics for one stateless crawler service.
+type Crawler struct {
 	HTTP             *HTTP
 	handler          http.Handler
 	crawlRequests    *prometheus.CounterVec
@@ -356,74 +359,75 @@ type DMHY struct {
 	parsePosts       *prometheus.CounterVec
 }
 
-func NewDMHY(version, commit string) *DMHY {
+// NewCrawler constructs the metric surface used by one stateless crawler.
+func NewCrawler(namespace, sourceName, version, commit string) *Crawler {
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
-	registerBuildInfo(reg, "takuhai_dmhy", version, commit)
+	registerBuildInfo(reg, namespace, version, commit)
 	auto := promauto.With(reg)
-	return &DMHY{
+	return &Crawler{
 		handler: promhttp.HandlerFor(reg, promhttp.HandlerOpts{}),
-		HTTP: newHTTP(reg, "takuhai_dmhy", map[string]string{
+		HTTP: newHTTP(reg, namespace, map[string]string{
 			"/crawl":   "/crawl",
 			"/metrics": "/metrics",
 		}),
 		crawlRequests: auto.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "takuhai_dmhy",
+			Namespace: namespace,
 			Subsystem: "crawl",
 			Name:      "requests_total",
 			Help:      "Total crawl requests.",
 		}, []string{"result"}),
 		crawlDuration: auto.NewHistogram(prometheus.HistogramOpts{
-			Namespace: "takuhai_dmhy",
+			Namespace: namespace,
 			Subsystem: "crawl",
 			Name:      "duration_seconds",
 			Help:      "Crawl request duration in seconds.",
 			Buckets:   prometheus.DefBuckets,
 		}),
 		crawlPages: auto.NewCounter(prometheus.CounterOpts{
-			Namespace: "takuhai_dmhy",
+			Namespace: namespace,
 			Subsystem: "crawl",
 			Name:      "pages_fetched_total",
-			Help:      "Total DMHY archive pages fetched successfully.",
+			Help:      "Total " + sourceName + " pages fetched successfully.",
 		}),
 		crawlPosts: auto.NewCounter(prometheus.CounterOpts{
-			Namespace: "takuhai_dmhy",
+			Namespace: namespace,
 			Subsystem: "crawl",
 			Name:      "posts_returned_total",
 			Help:      "Total posts returned from crawl requests.",
 		}),
 		crawlPostsPerReq: auto.NewHistogram(prometheus.HistogramOpts{
-			Namespace: "takuhai_dmhy",
+			Namespace: namespace,
 			Subsystem: "crawl",
 			Name:      "posts_per_request",
 			Help:      "Posts returned per crawl request.",
 			Buckets:   []float64{0, 1, 5, 10, 25, 50, 100, 200},
 		}),
 		fetchRequests: auto.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "takuhai_dmhy",
+			Namespace: namespace,
 			Subsystem: "fetch",
 			Name:      "requests_total",
-			Help:      "Total upstream DMHY page fetches.",
+			Help:      "Total upstream " + sourceName + " page fetches.",
 		}, []string{"result"}),
 		fetchDuration: auto.NewHistogram(prometheus.HistogramOpts{
-			Namespace: "takuhai_dmhy",
+			Namespace: namespace,
 			Subsystem: "fetch",
 			Name:      "duration_seconds",
-			Help:      "Upstream DMHY page fetch duration in seconds.",
+			Help:      "Upstream " + sourceName + " page fetch duration in seconds.",
 			Buckets:   prometheus.DefBuckets,
 		}),
 		parsePosts: auto.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "takuhai_dmhy",
+			Namespace: namespace,
 			Subsystem: "parse",
 			Name:      "posts_total",
-			Help:      "Total posts parsed from DMHY archive pages.",
+			Help:      "Total posts parsed from " + sourceName + " pages.",
 		}, []string{"result"}),
 	}
 }
 
-func (m *DMHY) Handler() http.Handler { return m.handler }
+func (m *Crawler) Handler() http.Handler { return m.handler }
 
-func (m *DMHY) Crawl(result string, posts int, dur time.Duration) {
+func (m *Crawler) Crawl(result string, posts int, dur time.Duration) {
 	if m == nil {
 		return
 	}
@@ -435,7 +439,7 @@ func (m *DMHY) Crawl(result string, posts int, dur time.Duration) {
 	}
 }
 
-func (m *DMHY) Fetch(result string, dur time.Duration) {
+func (m *Crawler) Fetch(result string, dur time.Duration) {
 	if m == nil {
 		return
 	}
@@ -446,7 +450,7 @@ func (m *DMHY) Fetch(result string, dur time.Duration) {
 	}
 }
 
-func (m *DMHY) ParsePosts(result string, posts int) {
+func (m *Crawler) ParsePosts(result string, posts int) {
 	if m == nil {
 		return
 	}

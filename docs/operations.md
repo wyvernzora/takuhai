@@ -21,6 +21,13 @@ The DMHY crawler is separate:
 ./bin/takuhai-dmhy serve --addr=:8081 --sort-id=2
 ```
 
+The Nyaa crawler exposes the same `/crawl` shape:
+
+```sh
+(cd sources/nyaa && go build -o ../../bin/takuhai-nyaa ./cmd/takuhai-nyaa)
+./bin/takuhai-nyaa serve --addr=:8082 --category=1_0 --filter=0
+```
+
 ## Configuration
 
 Every service flag honors a `TAKUHAI_` environment fallback.
@@ -32,8 +39,10 @@ Every service flag honors a `TAKUHAI_` environment fallback.
 | `--log-level` | `TAKUHAI_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `--queue-max-attempts` | `TAKUHAI_QUEUE_MAX_ATTEMPTS` | `3` | Failed unmatched submits before `exhausted` |
 
-The crawler uses `TAKUHAI_DMHY_` variables for its own flags (`--addr`,
+The DMHY crawler uses `TAKUHAI_DMHY_` variables for its own flags (`--addr`,
 `--dmhy-base-url`, `--sort-id`, `--rate-rps`, `--cache-ttl`, `--log-level`).
+The Nyaa crawler uses `TAKUHAI_NYAA_` variables (`--addr`, `--nyaa-base-url`,
+`--query`, `--category`, `--filter`, `--rate-rps`, `--log-level`).
 
 ## Database
 
@@ -64,7 +73,7 @@ takuhai has no application-level auth. Restrict write surfaces by infrastructure
 n8n should be the only caller of `/ingest`, `/magnets/*`, `/queue/*`, and
 `/submit`; consumer agents should only reach `/mcp`. The service itself needs egress
 only to Postgres and DNS.
-The crawler deployment, not takuhai, owns DMHY egress.
+Crawler deployments, not takuhai, own source-site egress.
 
 This repo does not ship Kubernetes manifests. Platform policy belongs with the
 deployment that runs takuhai.
@@ -73,8 +82,8 @@ deployment that runs takuhai.
 
 Push a semver tag such as `v0.1.0` to run `.github/workflows/release.yaml`. The
 workflow verifies that the tagged commit is on `main` and has a successful `ci.yml`
-push run, then publishes versioned and `latest` GHCR images for takuhai, the DMHY
-crawler, and the n8n node init image before creating the GitHub release.
+push run, then publishes versioned and `latest` GHCR images for takuhai, the crawler
+images, and the n8n node init image before creating the GitHub release.
 
 ## Health And Shutdown
 
@@ -91,7 +100,7 @@ make hooks
 make check
 make devserver
 
-for m in . sources/dmhy; do (cd "$m" && go build ./... && go vet ./... && go test -race ./...); done
+for m in . sources/dmhy sources/nyaa; do (cd "$m" && go build ./... && go vet ./... && go test -race ./...); done
 
 go test -tags=e2e -run TestEndToEndWorkflow -count=1 ./e2e
 go test -race -tags=conformance ./...
@@ -99,8 +108,8 @@ go test -tags=smoke -run TestSmoke ./cmd/takuhai
 ```
 
 `make devserver` runs `docker compose -f tools/devserver/compose.yaml up --build`: ephemeral
-Postgres on `localhost:5432`, takuhai on `localhost:8080`, and the DMHY crawler on
-`localhost:8081`. Stop it with Ctrl-C; use
+Postgres on `localhost:5432`, takuhai on `localhost:8080`, the DMHY crawler on
+`localhost:8081`, and the Nyaa crawler on `localhost:8082`. Stop it with Ctrl-C; use
 `docker compose -f tools/devserver/compose.yaml down` to remove the containers.
 
 `make test` includes the Docker-backed e2e workflow test. Conformance, e2e, and smoke

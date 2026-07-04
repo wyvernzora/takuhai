@@ -14,6 +14,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 
 	"github.com/wyvernzora/takuhai/internal/store"
+	"github.com/wyvernzora/takuhai/pkg/rawpost"
 )
 
 func TestHTTPWrapRecordsRouteAndStatus(t *testing.T) {
@@ -71,8 +72,8 @@ func TestConstructorsUseIndependentRegistries(t *testing.T) {
 	q := fakeQueueStats{}
 	_ = NewTakuhai("v", "c", q)
 	_ = NewTakuhai("v", "c", q)
-	_ = NewDMHY("v", "c")
-	_ = NewDMHY("v", "c")
+	_ = NewCrawler("takuhai_dmhy", "DMHY", "v", "c")
+	_ = NewCrawler("takuhai_dmhy", "DMHY", "v", "c")
 }
 
 func TestSubmitConfidenceRecordsMatchedAndSuppressed(t *testing.T) {
@@ -109,7 +110,7 @@ func TestQueueStatsErrorDoesNotFailScrape(t *testing.T) {
 	}
 }
 
-func TestTakuhaiPrecreatesDMHYIngestPostCounters(t *testing.T) {
+func TestTakuhaiPrecreatesIngestPostCounters(t *testing.T) {
 	m := NewTakuhai("v", "c", fakeQueueStats{})
 	rec := httptest.NewRecorder()
 
@@ -119,10 +120,12 @@ func TestTakuhaiPrecreatesDMHYIngestPostCounters(t *testing.T) {
 		t.Fatalf("read /metrics: %v", err)
 	}
 	text := string(body)
-	for _, result := range []string{"new", "updated", "duplicate", "conflict", "skipped", "error"} {
-		want := `takuhai_ingest_posts_total{result="` + result + `",source="dmhy"} 0`
-		if !strings.Contains(text, want) {
-			t.Fatalf("/metrics missing %q:\n%s", want, text)
+	for _, source := range rawpost.Sources() {
+		for _, result := range []string{"new", "updated", "duplicate", "conflict", "skipped", "error"} {
+			want := `takuhai_ingest_posts_total{result="` + result + `",source="` + source + `"} 0`
+			if !strings.Contains(text, want) {
+				t.Fatalf("/metrics missing %q:\n%s", want, text)
+			}
 		}
 	}
 }

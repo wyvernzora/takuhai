@@ -1,4 +1,4 @@
-package dmhy
+package crawl
 
 import (
 	"fmt"
@@ -12,13 +12,13 @@ import (
 // handled here and the remainder delegated to the standard parser.
 var extDurationPrefixRe = regexp.MustCompile(`^(?:(\d+)w)?(?:(\d+)d)?`)
 
-// parseLookback parses an extended Go duration: an optional leading <int>w and/or
+// ParseLookback parses an extended Go duration: an optional leading <int>w and/or
 // <int>d (weeks/days) prefix is stripped and added on, the remainder delegated to
 // time.ParseDuration (so 30d, 2w, 36h, 90m, 2w12h all parse). "" or a result of 0
 // means "no lookback limit" (0). A malformed input (negatives, trailing garbage,
-// anything time.ParseDuration rejects) is a hard error — the caller maps it to a 400
+// anything time.ParseDuration rejects) is a hard error - the caller maps it to a 400
 // client error, never a 502.
-func parseLookback(s string) (time.Duration, error) {
+func ParseLookback(source, s string) (time.Duration, error) {
 	if s == "" || s == "0" {
 		return 0, nil
 	}
@@ -29,14 +29,14 @@ func parseLookback(s string) (time.Duration, error) {
 	if m[1] != "" {
 		w, err := strconv.Atoi(m[1])
 		if err != nil {
-			return 0, fmt.Errorf("dmhy: malformed lookback %q: %w", s, err)
+			return 0, fmt.Errorf("%s: malformed lookback %q: %w", source, s, err)
 		}
 		ext += time.Duration(w) * 7 * 24 * time.Hour
 	}
 	if m[2] != "" {
 		d, err := strconv.Atoi(m[2])
 		if err != nil {
-			return 0, fmt.Errorf("dmhy: malformed lookback %q: %w", s, err)
+			return 0, fmt.Errorf("%s: malformed lookback %q: %w", source, s, err)
 		}
 		ext += time.Duration(d) * 24 * time.Hour
 	}
@@ -45,10 +45,10 @@ func parseLookback(s string) (time.Duration, error) {
 	if rest != "" {
 		d, err := time.ParseDuration(rest)
 		if err != nil {
-			return 0, fmt.Errorf("dmhy: malformed lookback %q: %w", s, err)
+			return 0, fmt.Errorf("%s: malformed lookback %q: %w", source, s, err)
 		}
 		if d < 0 {
-			return 0, fmt.Errorf("dmhy: malformed lookback %q: negative duration", s)
+			return 0, fmt.Errorf("%s: malformed lookback %q: negative duration", source, s)
 		}
 		ext += d
 	}

@@ -1,6 +1,6 @@
 # Metrics
 
-takuhai and the DMHY crawler expose Prometheus metrics at `/metrics`.
+takuhai and crawler services expose Prometheus metrics at `/metrics`.
 
 ## takuhai
 
@@ -42,6 +42,11 @@ takuhai and the DMHY crawler expose Prometheus metrics at `/metrics`.
 | `takuhai_dmhy_fetch_requests_total` | counter | `result` | Upstream page fetches by `ok` or `error`. Rate-limit waiting time is not included. |
 | `takuhai_dmhy_fetch_duration_seconds` | histogram | none | Upstream page fetch duration, after rate-limit waiting. |
 | `takuhai_dmhy_parse_posts_total` | counter | `result` | Parsed posts by result. Currently only successful parsed posts increment `result="ok"`. |
+
+## Nyaa Crawler
+
+The Nyaa crawler exposes the same metric families under the `takuhai_nyaa_*`
+namespace.
 
 Go runtime and process metrics are also exported by each service.
 

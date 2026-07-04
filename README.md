@@ -43,7 +43,7 @@ release. Consumers read the catalog over an **MCP** API (`list_releases`,
 ## Quick start
 
 ```sh
-make devserver                                     # Postgres + takuhai + DMHY crawler
+make devserver                                     # Postgres + takuhai + crawler services
 
 make build                                          # → bin/takuhai
 TAKUHAI_DATABASE_URL=postgres://… \
@@ -68,7 +68,7 @@ make hooks    # point git at .githooks/ (commit-message guard)
 make check    # fmt + vet + lint + test + build
 ```
 
-This is a Go workspace: the root service module + the `sources/dmhy` crawler module.
+This is a Go workspace: the root service module + crawler modules under `sources/`.
 
 ## License
 

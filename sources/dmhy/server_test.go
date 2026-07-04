@@ -33,7 +33,7 @@ func TestArchivePageURLSortID(t *testing.T) {
 // the error carry the bare path instead, which this assertion catches; passing sortID
 // in as a parameter could not.
 func TestNewServerSortIDReachesCrawl(t *testing.T) {
-	s := NewServer("file:///nonexistent/takuhai-dmhy-test", 31, 0, 0)
+	s := NewServerWithMetricsAndLogger("file:///nonexistent/takuhai-dmhy-test", 31, 0, 0, nil, nil)
 
 	_, err := s.crawler.Crawl(context.Background(), CrawlRequest{PageSize: 1}, 0)
 	if err == nil {

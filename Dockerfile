@@ -4,8 +4,8 @@ FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
 
 WORKDIR /src
 
-# Pre-fetch root-module dependencies for layer caching. The crawler module
-# (sources/dmhy) resolves the root via its `replace … => ../..`, so it shares
+# Pre-fetch root-module dependencies for layer caching. Crawler modules
+# resolve the root via `replace … => ../..`, so they share
 # the same module cache once the full tree is copied below.
 COPY go.mod go.sum ./
 RUN go mod download
@@ -16,7 +16,7 @@ RUN go mod download
 COPY . .
 
 # BUILD_DIR is the module root to build from (`.` for the service,
-# `sources/dmhy` for the crawler). CMD_PKG is the main package within it.
+# `sources/*` for a crawler). CMD_PKG is the main package within it.
 ARG BUILD_DIR=.
 ARG CMD_PKG=./cmd/takuhai
 ARG VERSION=dev
@@ -42,6 +42,7 @@ COPY --from=build /out/app /usr/local/bin/app
 # own env var; the var the other binary ignores is harmless.
 ENV TAKUHAI_ADDR=:8080
 ENV TAKUHAI_DMHY_ADDR=:8080
+ENV TAKUHAI_NYAA_ADDR=:8080
 
 # The shared CMD supplies the crawler's required `serve` subcommand. The service binary
 # has no subcommands, so it ignores the trailing positional and configures from env.
