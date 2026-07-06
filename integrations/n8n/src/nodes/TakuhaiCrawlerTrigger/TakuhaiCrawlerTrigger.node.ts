@@ -32,6 +32,12 @@ export class TakuhaiCrawlerTrigger implements INodeType {
 		version: 1,
 		subtitle: '={{"crawl: " + $parameter["batchSize"] + " posts"}}',
 		description: 'Polls a takuhai-shaped crawler and emits new posts in batches',
+		codex: {
+			categories: ['Core Nodes'],
+			subcategories: {
+				'Core Nodes': ['Helpers'],
+			},
+		},
 		defaults: { name: 'Takuhai Crawler Trigger' },
 		polling: true,
 		inputs: [],

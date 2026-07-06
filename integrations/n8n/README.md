@@ -25,7 +25,7 @@ Operation I/O (the cardinalities differ by design):
 - **Queue → Claim** — manual claim operation; emits one item containing `{items, count}`.
 - **Queue → Submit Dispositions** — accepts one JSON body: a single disposition object, an array of
   disposition objects, one `{items}` batch object, or structured-output `{output:{items}}`;
-  emits `{items:[{infohash, ok, error?}], count}`. HTTP 409 conflicts become per-item
+  emits `{items:[{infohash, metadataRef, ok, error?}], count}`. HTTP 409 conflicts become per-item
   `{ok:false,error:"conflict"}` results; other errors still fail the node.
 - **Queue → Get Queue Stats** — one stats item.
 - **Crawler → Crawl** — one item = the page `{posts, next_cursor, has_more}`.

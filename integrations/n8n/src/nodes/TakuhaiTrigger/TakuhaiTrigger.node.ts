@@ -23,6 +23,12 @@ export class TakuhaiTrigger implements INodeType {
 		version: 1,
 		subtitle: '={{"claim: " + $parameter["limit"]}}',
 		description: 'Claims takuhai queue work when releases are available',
+		codex: {
+			categories: ['Core Nodes'],
+			subcategories: {
+				'Core Nodes': ['Helpers'],
+			},
+		},
 		defaults: { name: 'Takuhai Queue Trigger' },
 		polling: true,
 		inputs: [],

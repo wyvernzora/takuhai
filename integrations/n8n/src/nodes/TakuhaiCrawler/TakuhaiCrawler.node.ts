@@ -25,6 +25,12 @@ export class TakuhaiCrawler implements INodeType {
 		version: 1,
 		subtitle: '={{$parameter["operation"] + " (" + $parameter["resource"] + ")"}}',
 		description: 'Fetch a page of posts from a takuhai-shaped crawler (POST /crawl)',
+		codex: {
+			categories: ['Core Nodes'],
+			subcategories: {
+				'Core Nodes': ['Helpers'],
+			},
+		},
 		defaults: { name: 'Takuhai Crawler' },
 		inputs: ['main'],
 		outputs: ['main'],

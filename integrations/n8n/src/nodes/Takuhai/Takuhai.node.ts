@@ -19,6 +19,12 @@ export class Takuhai implements INodeType {
 		version: 1,
 		subtitle: '={{$parameter["operation"] + " (" + $parameter["resource"] + ")"}}',
 		description: 'Ingest posts and drive the takuhai match loop',
+		codex: {
+			categories: ['Core Nodes'],
+			subcategories: {
+				'Core Nodes': ['Helpers'],
+			},
+		},
 		defaults: { name: 'Takuhai' },
 		inputs: ['main'],
 		outputs: ['main'],
@@ -220,10 +226,10 @@ type HTTPCall = (method: IHttpRequestMethods, path: string, body?: IDataObject) 
 async function submitOne(call: HTTPCall, body: IDataObject): Promise<IDataObject> {
 	try {
 		await call('POST', '/submit', body);
-		return { infohash: submitInfohash(body), ok: true };
+		return { infohash: submitInfohash(body), metadataRef: submitMetadataRef(body), ok: true };
 	} catch (error) {
 		if (statusCode(error) === 409) {
-			return { infohash: submitInfohash(body), ok: false, error: 'conflict' };
+			return { infohash: submitInfohash(body), metadataRef: submitMetadataRef(body), ok: false, error: 'conflict' };
 		}
 		throw error;
 	}
@@ -262,6 +268,11 @@ function outputItems(body: IDataObject): unknown {
 function submitInfohash(body: IDataObject): string {
 	const infohash = body.infohash;
 	return typeof infohash === 'string' ? infohash : '';
+}
+
+function submitMetadataRef(body: IDataObject): string {
+	const ref = body.ref;
+	return typeof ref === 'string' ? ref : '';
 }
 
 function statusCode(error: unknown): number | undefined {
