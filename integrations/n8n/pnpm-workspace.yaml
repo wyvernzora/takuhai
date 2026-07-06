@@ -1,0 +1,4 @@
+allowBuilds:
+  isolated-vm: true
+onlyBuiltDependencies:
+  - isolated-vm
