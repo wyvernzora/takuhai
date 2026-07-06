@@ -4,6 +4,8 @@ This MCP surface is read-only and consumer-facing. Queue claiming, ingest, and m
 
 Use `list_releases` to page through recent matched releases. Add `ref` only when filtering to one opaque metadata ref such as `tvdb:12345`. Treat refs as opaque `namespace:value` strings; do not infer behavior from the namespace beyond preserving it exactly.
 
+Use `get_release` when you already have one infohash and need full release context: representative fields, raw source evidence, and match history.
+
 Use `resolve_magnets` only after choosing releases by infohash. It returns full stored magnet URIs for known infohashes and omits unknown infohashes.
 
 Infohashes are release identity in Takuhai. Copy infohashes, refs, cursors, and magnet URIs exactly as returned.

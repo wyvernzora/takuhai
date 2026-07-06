@@ -31,8 +31,8 @@ sizable change.
   makes no outbound calls.
 - **Surfaces:**
   - REST (n8n-driven): `POST /ingest`, `POST /queue/claim`, `GET /queue/stats`,
-    and `POST /submit`.
-  - MCP (consumer-only): `list_releases`, `resolve_magnets`, over streamable HTTP at `/mcp`.
+    `POST /submit`, `GET /magnets/{infohash}`, and `GET /releases/{infohash}`.
+  - MCP (consumer-only): `list_releases`, `get_release`, `resolve_magnets`, over streamable HTTP at `/mcp`.
   - `/healthz` — a live DB ping.
 - **Transport:** HTTP (`--addr=:8080`).
 - **Distribution:** Go binary + Docker container. The crawler is a separate binary

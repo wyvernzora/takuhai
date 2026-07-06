@@ -3,10 +3,12 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/wyvernzora/takuhai/internal/dispatch"
@@ -28,14 +30,14 @@ const (
 )
 
 // Server is the MCP server exposing the CONSUMER tool group ONLY (design
-// workspace-migration §2/§4): list_releases and resolve_magnets, the agent-facing read
+// workspace-migration §2/§4): list_releases, get_release, and resolve_magnets, the agent-facing read
 // surface. The worker tools moved to the REST queue/submit API (internal/rest), so the
 // MCP server no longer routes them. Transport is streamable HTTP at /mcp (+ the
 // standalone /healthz handler it mounts but does not own — design §6/§10).
 //
 // The dispatch logic lives in the transport-neutral internal/dispatch package; the
 // Server holds a *dispatch.Dispatcher and routes only the consumer tools to it. The
-// concrete SDK server (sdk) is built once in NewServer with the two consumer tools
+// concrete SDK server (sdk) is built once in NewServer with the consumer tools
 // registered against that same dispatcher, so the wire surface has one source of truth
 // for behavior.
 type Server struct {
@@ -73,11 +75,10 @@ func (s *Server) log(ctx context.Context, level slog.Level, msg string, attrs ..
 	s.logger.Log(ctx, level, msg, attrs...)
 }
 
-// newSDKServer builds the SDK server and registers the two consumer tools. Each tool
-// is wired to the matching dispatch entrypoint via the low-level Server.AddTool seam:
-// the raw JSON arguments cross to the dispatch func untouched and its raw JSON result
-// crosses back. The worker tools are intentionally ABSENT — they live behind
-// internal/rest.
+// newSDKServer builds the SDK server and registers the consumer tools. Each tool
+// uses typed SDK input binding and schema advertisement, then addStructuredTool
+// attaches structuredContent only for non-error results. The worker tools are
+// intentionally ABSENT — they live behind internal/rest.
 func newSDKServer(s *Server) *mcpsdk.Server {
 	srv := mcpsdk.NewServer(&mcpsdk.Implementation{
 		Name:    serverName,
@@ -86,6 +87,7 @@ func newSDKServer(s *Server) *mcpsdk.Server {
 		Instructions: forLLM(serverInstructions),
 	})
 	addListReleasesTool(srv, s)
+	addGetReleaseTool(srv, s)
 	addResolveMagnetsTool(srv, s)
 	return srv
 }
@@ -99,6 +101,52 @@ func readOnlyToolAnnotations() *mcpsdk.ToolAnnotations {
 		IdempotentHint:  true,
 		OpenWorldHint:   &trueVal,
 	}
+}
+
+type structuredToolHandler[In, Out any] func(context.Context, *mcpsdk.CallToolRequest, In) (*mcpsdk.CallToolResult, Out, error)
+
+func addStructuredTool[In, Out any](srv *mcpsdk.Server, tool *mcpsdk.Tool, h structuredToolHandler[In, Out]) {
+	outputSchema, err := jsonschema.For[Out](nil)
+	if err != nil {
+		panic(fmt.Sprintf("addStructuredTool: tool %q: output schema: %v", tool.Name, err))
+	}
+	outputResolved, err := outputSchema.Resolve(&jsonschema.ResolveOptions{ValidateDefaults: true})
+	if err != nil {
+		panic(fmt.Sprintf("addStructuredTool: tool %q: output schema: %v", tool.Name, err))
+	}
+
+	tt := *tool
+	tt.OutputSchema = outputSchema
+	mcpsdk.AddTool[In, any](srv, &tt, func(ctx context.Context, req *mcpsdk.CallToolRequest, input In) (*mcpsdk.CallToolResult, any, error) {
+		res, out, err := h(ctx, req, input)
+		if err != nil {
+			return res, nil, err
+		}
+		if res != nil && res.IsError {
+			return res, nil, nil
+		}
+		if res == nil {
+			res = &mcpsdk.CallToolResult{}
+		}
+
+		outJSON, err := json.Marshal(out)
+		if err != nil {
+			return nil, nil, fmt.Errorf("marshaling output: %w", err)
+		}
+		var outValue any
+		if err := json.Unmarshal(outJSON, &outValue); err != nil {
+			return nil, nil, fmt.Errorf("decoding output: %w", err)
+		}
+		if err := outputResolved.Validate(outValue); err != nil {
+			return nil, nil, fmt.Errorf("validating tool output: %w", err)
+		}
+
+		res.StructuredContent = json.RawMessage(outJSON)
+		if res.Content == nil {
+			res.Content = []mcpsdk.Content{&mcpsdk.TextContent{Text: string(outJSON)}}
+		}
+		return res, nil, nil
+	})
 }
 
 // errorResult shapes a dispatch error into an MCP tool error (IsError true) carrying

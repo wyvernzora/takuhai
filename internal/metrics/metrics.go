@@ -97,6 +97,7 @@ func NewTakuhai(version, commit string, qs queueStatsProvider) *Takuhai {
 			"/healthz":     "/healthz",
 			"/ingest":      "/ingest",
 			"/magnets/":    "/magnets/{infohash}",
+			"/releases/":   "/releases/{infohash}",
 			"/mcp":         "/mcp",
 			"/metrics":     "/metrics",
 			"/queue/claim": "/queue/claim",

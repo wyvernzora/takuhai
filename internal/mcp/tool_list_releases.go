@@ -16,7 +16,7 @@ import (
 var toolListReleasesDoc string
 
 func addListReleasesTool(srv *mcpsdk.Server, s *Server) {
-	mcpsdk.AddTool(srv, &mcpsdk.Tool{
+	addStructuredTool[dispatch.ListReleasesRequest, dispatch.ListReleasesResult](srv, &mcpsdk.Tool{
 		Name:        "list_releases",
 		Description: forLLM(toolListReleasesDoc),
 		Annotations: readOnlyToolAnnotations(),

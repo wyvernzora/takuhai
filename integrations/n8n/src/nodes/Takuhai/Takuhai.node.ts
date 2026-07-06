@@ -43,6 +43,7 @@ export class Takuhai implements INodeType {
 				displayOptions: { show: { resource: ['releases'] } },
 				options: [
 					{ name: 'Ingest', value: 'ingest', action: 'Ingest releases' },
+					{ name: 'Get Release', value: 'get', action: 'Get a release' },
 					{
 						name: 'Get Magnet Link',
 						value: 'getMagnetLink',
@@ -106,7 +107,7 @@ export class Takuhai implements INodeType {
 				type: 'string',
 				default: '={{ $json.infohash }}',
 				required: true,
-				displayOptions: { show: { resource: ['releases'], operation: ['getMagnetLink'] } },
+				displayOptions: { show: { resource: ['releases'], operation: ['get', 'getMagnetLink'] } },
 			},
 		],
 	};
@@ -168,6 +169,14 @@ export class Takuhai implements INodeType {
 					const infohash = String(this.getNodeParameter('infohash', i));
 					const res = await call('GET', `/magnets/${encodeURIComponent(infohash)}`);
 					Logger.info('Takuhai magnet lookup completed', { item_index: i, infohash });
+					out.push({ json: res, pairedItem: { item: i } });
+					continue;
+				}
+
+				if (operation === 'get') {
+					const infohash = String(this.getNodeParameter('infohash', i));
+					const res = await call('GET', `/releases/${encodeURIComponent(infohash)}`);
+					Logger.info('Takuhai release lookup completed', { item_index: i, infohash });
 					out.push({ json: res, pairedItem: { item: i } });
 					continue;
 				}

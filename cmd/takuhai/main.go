@@ -118,7 +118,7 @@ func run() error {
 	healthz := health.NewHandlerWithLogger(st, logger.With("component", "health"))
 	metricsSrv := metrics.NewTakuhai(version, commit, st)
 
-	// The consumer-only MCP server (list_releases / resolve_magnets). Its Handler() serves
+	// The consumer-only MCP server (list_releases / get_release / resolve_magnets). Its Handler() serves
 	// /mcp + /healthz.
 	mcpSrv := mcp.NewServerWithMetricsAndLogger(st, healthz, metricsSrv, logger.With("component", "mcp"))
 
@@ -150,6 +150,7 @@ func runHTTP(
 	restAPI := rest.NewWithMetricsAndLogger(st, metricsSrv, logger.With("component", "rest"))
 	mux.Handle("/ingest", restAPI)
 	mux.Handle("/magnets/", restAPI)
+	mux.Handle("/releases/", restAPI)
 	mux.Handle("/queue/", restAPI)
 	mux.Handle("/submit", restAPI)
 

@@ -23,6 +23,13 @@ const (
 	maxMagnetsBatch      = 500
 )
 
+const rawItemsByInfohashSQL = `
+	SELECT id, source, source_id, title, NULLIF(url, ''), published_at, ingested_at
+	FROM raw_items
+	WHERE infohash = $1
+	ORDER BY id ASC
+`
+
 type StoreConfig struct {
 	QueueMaxAttempts int
 }
@@ -31,6 +38,10 @@ type Store struct {
 	pool  *pgxpool.Pool
 	clock store.Clock
 	cfg   StoreConfig
+}
+
+type releaseQuerier interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 }
 
 var (
@@ -252,7 +263,7 @@ func (s *Store) Claim(ctx context.Context, p store.ClaimParams) (store.ClaimResu
 
 	items := make([]store.ClaimedRelease, 0, len(claimed))
 	for _, cr := range claimed {
-		raw, err := s.rawItemsFor(ctx, tx, cr.infohash)
+		raw, err := rawItemsFor(ctx, tx, cr.infohash, "claim")
 		if err != nil {
 			return store.ClaimResult{}, err
 		}
@@ -271,23 +282,18 @@ func (s *Store) Claim(ctx context.Context, p store.ClaimParams) (store.ClaimResu
 	return store.ClaimResult{Items: items}, nil
 }
 
-func (s *Store) rawItemsFor(ctx context.Context, tx pgx.Tx, infohash string) ([]store.RawItemEvent, error) {
-	rows, err := tx.Query(ctx, `
-		SELECT id, source, source_id, title, COALESCE(url, ''), published_at
-		FROM raw_items
-		WHERE infohash = $1
-		ORDER BY id
-	`, infohash)
+func rawItemsFor(ctx context.Context, q releaseQuerier, infohash, op string) ([]store.RawItemDetail, error) {
+	rows, err := q.Query(ctx, rawItemsByInfohashSQL, infohash)
 	if err != nil {
-		return nil, fmt.Errorf("claim: load raw_items for %s: %w", infohash, err)
+		return nil, fmt.Errorf("%s: load raw_items for %s: %w", op, infohash, err)
 	}
-	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (store.RawItemEvent, error) {
-		var ev store.RawItemEvent
-		err := row.Scan(&ev.ID, &ev.Source, &ev.SourceID, &ev.Title, &ev.URL, &ev.PublishedAt)
-		return ev, err
+	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (store.RawItemDetail, error) {
+		var item store.RawItemDetail
+		err := row.Scan(&item.ID, &item.Source, &item.SourceID, &item.Title, &item.URL, &item.PublishedAt, &item.IngestedAt)
+		return item, err
 	})
 	if err != nil {
-		return nil, fmt.Errorf("claim: collect raw_items for %s: %w", infohash, err)
+		return nil, fmt.Errorf("%s: collect raw_items for %s: %w", op, infohash, err)
 	}
 	return items, nil
 }
@@ -577,6 +583,69 @@ func (s *Store) listReleaseRows(ctx context.Context, q store.ReleaseQuery, path 
 		ORDER BY first_matched_at DESC, infohash DESC
 		LIMIT $6
 	`, q.Ref, *q.Since, seekKey, seekHash, hasSeek, fetch)
+}
+
+func (s *Store) GetRelease(ctx context.Context, infohash string) (store.ReleaseDetail, error) {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return store.ReleaseDetail{}, fmt.Errorf("get_release %s: begin tx: %w", infohash, err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // best-effort cleanup after commit/error.
+
+	var out store.ReleaseDetail
+	err = tx.QueryRow(ctx, `
+		SELECT infohash, title, magnet, size_bytes, published_at, sources,
+			match_status, ref, confidence, first_matched_at, attempt_count,
+			created_at, updated_at
+		FROM releases
+		WHERE infohash = $1
+	`, infohash).Scan(
+		&out.Infohash, &out.Title, &out.Magnet, &out.SizeBytes, &out.PublishedAt, &out.Sources,
+		&out.MatchStatus, &out.Ref, &out.Confidence, &out.FirstMatchedAt, &out.AttemptCount,
+		&out.CreatedAt, &out.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return store.ReleaseDetail{}, fmt.Errorf("get_release %s: %w", infohash, store.ErrNoSuchRelease)
+	}
+	if err != nil {
+		return store.ReleaseDetail{}, fmt.Errorf("get_release %s: %w", infohash, err)
+	}
+
+	rawItems, err := rawItemsFor(ctx, tx, infohash, "get_release "+infohash)
+	if err != nil {
+		return store.ReleaseDetail{}, err
+	}
+	matchEvents, err := s.releaseMatchEvents(ctx, tx, infohash)
+	if err != nil {
+		return store.ReleaseDetail{}, err
+	}
+	out.RawItems = rawItems
+	out.MatchEvents = matchEvents
+	if err := tx.Commit(ctx); err != nil {
+		return store.ReleaseDetail{}, fmt.Errorf("get_release %s: commit: %w", infohash, err)
+	}
+	return out, nil
+}
+
+func (s *Store) releaseMatchEvents(ctx context.Context, q releaseQuerier, infohash string) ([]store.MatchEventDetail, error) {
+	rows, err := q.Query(ctx, `
+		SELECT id, status, ref, confidence, NULLIF(reason, ''), created_at
+		FROM match_events
+		WHERE infohash = $1
+		ORDER BY created_at ASC, id ASC
+	`, infohash)
+	if err != nil {
+		return nil, fmt.Errorf("get_release %s: load match_events: %w", infohash, err)
+	}
+	events, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (store.MatchEventDetail, error) {
+		var ev store.MatchEventDetail
+		err := row.Scan(&ev.ID, &ev.Status, &ev.Ref, &ev.Confidence, &ev.Reason, &ev.CreatedAt)
+		return ev, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("get_release %s: collect match_events: %w", infohash, err)
+	}
+	return events, nil
 }
 
 func (s *Store) ResolveMagnets(ctx context.Context, infohashes []string) (map[string]string, error) {

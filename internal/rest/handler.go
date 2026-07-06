@@ -39,6 +39,7 @@ func NewWithMetricsAndLogger(s store.Store, m *metrics.Takuhai, logger *slog.Log
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ingest", h.handleIngest)
 	mux.HandleFunc("/magnets/", h.handleGetMagnet)
+	mux.HandleFunc("/releases/", h.handleGetRelease)
 	mux.HandleFunc("/queue/claim", h.handleClaim)
 	mux.HandleFunc("/queue/stats", h.handleQueueStats)
 	mux.HandleFunc("/submit", h.handleSubmit)
@@ -98,7 +99,7 @@ func dispatchLogLevel(err error) slog.Level {
 }
 
 func writeBadInput(w http.ResponseWriter, msg string) {
-	writeError(w, http.StatusBadRequest, "", "", msg)
+	writeError(w, http.StatusBadRequest, "invalid_input", "", msg)
 }
 
 func writeJSON(w http.ResponseWriter, status int, raw []byte) {

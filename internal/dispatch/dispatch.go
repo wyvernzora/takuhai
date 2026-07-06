@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/wyvernzora/takuhai/internal/cursor"
+	"github.com/wyvernzora/takuhai/internal/infohash"
 	"github.com/wyvernzora/takuhai/internal/store"
 )
 
@@ -33,10 +34,11 @@ type ClaimItemResult struct {
 }
 
 type RawItemResult struct {
-	ID          int64  `json:"id"`
-	Source      string `json:"source"`
-	SourceID    string `json:"source_id"`
-	Title       string `json:"title"`
+	ID       int64  `json:"id"`
+	Source   string `json:"source"`
+	SourceID string `json:"source_id"`
+	Title    string `json:"title"`
+	// Claim wire compatibility: store.RawItemDetail.URL is shared with detail output; nil becomes "" so omitempty drops the key.
 	URL         string `json:"url,omitempty"`
 	PublishedAt string `json:"published_at"`
 }
@@ -85,6 +87,47 @@ type ListReleasesResult struct {
 	NextCursor *string             `json:"next_cursor,omitempty"`
 }
 
+type GetReleaseRequest struct {
+	Infohash string `json:"infohash" jsonschema:"canonical v1 btih infohash for the release to fetch"`
+}
+
+type GetReleaseResult struct {
+	Infohash       string                 `json:"infohash"`
+	Title          string                 `json:"title"`
+	Magnet         *string                `json:"magnet"`
+	SizeBytes      *int64                 `json:"size_bytes"`
+	PublishedAt    string                 `json:"published_at"`
+	Sources        []string               `json:"sources"`
+	MatchStatus    string                 `json:"match_status"`
+	Ref            *string                `json:"ref"`
+	Confidence     *float64               `json:"confidence"`
+	FirstMatchedAt *string                `json:"first_matched_at"`
+	AttemptCount   int                    `json:"attempt_count"`
+	CreatedAt      string                 `json:"created_at"`
+	UpdatedAt      string                 `json:"updated_at"`
+	RawItems       []RawItemDetailResult  `json:"raw_items"`
+	MatchEvents    []MatchEventItemResult `json:"match_events"`
+}
+
+type RawItemDetailResult struct {
+	ID          int64   `json:"id"`
+	Source      string  `json:"source"`
+	SourceID    string  `json:"source_id"`
+	Title       string  `json:"title"`
+	URL         *string `json:"url"`
+	PublishedAt string  `json:"published_at"`
+	IngestedAt  string  `json:"ingested_at"`
+}
+
+type MatchEventItemResult struct {
+	ID         int64    `json:"id"`
+	Status     string   `json:"status"`
+	Ref        *string  `json:"ref"`
+	Confidence *float64 `json:"confidence"`
+	Reason     *string  `json:"reason"`
+	CreatedAt  string   `json:"created_at"`
+}
+
 type ResolveMagnetsRequest struct {
 	Infohashes []string `json:"infohashes"`
 }
@@ -117,12 +160,16 @@ func (d *Dispatcher) ClaimTyped(ctx context.Context, req ClaimRequest) (ClaimRes
 	for _, it := range res.Items {
 		raw := make([]RawItemResult, 0, len(it.RawItems))
 		for _, ri := range it.RawItems {
+			url := ""
+			if ri.URL != nil {
+				url = *ri.URL
+			}
 			raw = append(raw, RawItemResult{
 				ID:          ri.ID,
 				Source:      ri.Source,
 				SourceID:    ri.SourceID,
 				Title:       ri.Title,
-				URL:         ri.URL,
+				URL:         url,
 				PublishedAt: ri.PublishedAt.Format(time.RFC3339Nano),
 			})
 		}
@@ -231,6 +278,72 @@ func (d *Dispatcher) ListReleasesTyped(ctx context.Context, req ListReleasesRequ
 	return out, nil
 }
 
+func (d *Dispatcher) GetRelease(ctx context.Context, input []byte) ([]byte, error) {
+	var req GetReleaseRequest
+	if err := json.Unmarshal(input, &req); err != nil {
+		return nil, err
+	}
+	out, err := d.GetReleaseTyped(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(out)
+}
+
+func (d *Dispatcher) GetReleaseTyped(ctx context.Context, req GetReleaseRequest) (GetReleaseResult, error) {
+	ih, err := infohash.NormalizeInfohash(req.Infohash)
+	if err != nil {
+		return GetReleaseResult{}, fmt.Errorf("%w: invalid infohash %q: %v", ErrInvalidInput, req.Infohash, err)
+	}
+	detail, err := d.store.GetRelease(ctx, ih)
+	if err != nil {
+		return GetReleaseResult{}, err
+	}
+	sources := detail.Sources
+	if sources == nil {
+		sources = []string{}
+	}
+	out := GetReleaseResult{
+		Infohash:       detail.Infohash,
+		Title:          detail.Title,
+		Magnet:         detail.Magnet,
+		SizeBytes:      detail.SizeBytes,
+		PublishedAt:    detail.PublishedAt.Format(time.RFC3339Nano),
+		Sources:        sources,
+		MatchStatus:    detail.MatchStatus,
+		Ref:            detail.Ref,
+		Confidence:     detail.Confidence,
+		FirstMatchedAt: timeStringPtr(detail.FirstMatchedAt),
+		AttemptCount:   detail.AttemptCount,
+		CreatedAt:      detail.CreatedAt.Format(time.RFC3339Nano),
+		UpdatedAt:      detail.UpdatedAt.Format(time.RFC3339Nano),
+		RawItems:       make([]RawItemDetailResult, 0, len(detail.RawItems)),
+		MatchEvents:    make([]MatchEventItemResult, 0, len(detail.MatchEvents)),
+	}
+	for _, item := range detail.RawItems {
+		out.RawItems = append(out.RawItems, RawItemDetailResult{
+			ID:          item.ID,
+			Source:      item.Source,
+			SourceID:    item.SourceID,
+			Title:       item.Title,
+			URL:         item.URL,
+			PublishedAt: item.PublishedAt.Format(time.RFC3339Nano),
+			IngestedAt:  item.IngestedAt.Format(time.RFC3339Nano),
+		})
+	}
+	for _, ev := range detail.MatchEvents {
+		out.MatchEvents = append(out.MatchEvents, MatchEventItemResult{
+			ID:         ev.ID,
+			Status:     ev.Status,
+			Ref:        ev.Ref,
+			Confidence: ev.Confidence,
+			Reason:     ev.Reason,
+			CreatedAt:  ev.CreatedAt.Format(time.RFC3339Nano),
+		})
+	}
+	return out, nil
+}
+
 func (d *Dispatcher) ResolveMagnets(ctx context.Context, input []byte) ([]byte, error) {
 	var req ResolveMagnetsRequest
 	if err := json.Unmarshal(input, &req); err != nil {
@@ -271,4 +384,12 @@ func WireCode(err error) string {
 	default:
 		return ""
 	}
+}
+
+func timeStringPtr(t *time.Time) *string {
+	if t == nil {
+		return nil
+	}
+	s := t.Format(time.RFC3339Nano)
+	return &s
 }

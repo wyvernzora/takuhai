@@ -13,9 +13,10 @@ import (
 )
 
 type fakeStore struct {
-	claim      store.ClaimParams
-	submit     store.SubmitParams
-	infohashes []string
+	claim           store.ClaimParams
+	submit          store.SubmitParams
+	infohashes      []string
+	releaseInfohash string
 }
 
 func (f *fakeStore) Ping(context.Context) error { return nil }
@@ -45,6 +46,17 @@ func (f *fakeStore) CatalogStats(context.Context) (store.CatalogStats, error) {
 }
 func (f *fakeStore) ListReleases(context.Context, store.ReleaseQuery) (store.ReleasePage, error) {
 	return store.ReleasePage{}, nil
+}
+func (f *fakeStore) GetRelease(_ context.Context, infohash string) (store.ReleaseDetail, error) {
+	f.releaseInfohash = infohash
+	return store.ReleaseDetail{
+		Infohash:    infohash,
+		Title:       "release",
+		PublishedAt: time.Unix(1, 0).UTC(),
+		MatchStatus: "unmatched",
+		CreatedAt:   time.Unix(1, 0).UTC(),
+		UpdatedAt:   time.Unix(1, 0).UTC(),
+	}, nil
 }
 func (f *fakeStore) ResolveMagnets(_ context.Context, infohashes []string) (map[string]string, error) {
 	f.infohashes = infohashes
@@ -124,6 +136,53 @@ func TestGetMagnet(t *testing.T) {
 		t.Fatalf("decode response: %v", err)
 	}
 	if body.Infohash != "0123456789abcdef0123456789abcdef01234567" || body.Magnet != "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&tr=udp://tracker" {
+		t.Fatalf("response = %+v", body)
+	}
+}
+
+func TestGetRelease(t *testing.T) {
+	st := &fakeStore{}
+	req := httptest.NewRequest(http.MethodGet, "/releases/JN7DUBILGVIFL46NCSOF42GZ5JCXNNUS", http.NoBody)
+	rec := httptest.NewRecorder()
+
+	New(st).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; response %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if st.releaseInfohash != "4b7e3a050b355055f3cd149c5e68d9ea4576b692" {
+		t.Fatalf("release infohash = %q, want canonical hex", st.releaseInfohash)
+	}
+	var body struct {
+		Infohash    string `json:"infohash"`
+		Title       string `json:"title"`
+		MatchStatus string `json:"match_status"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Infohash != "4b7e3a050b355055f3cd149c5e68d9ea4576b692" || body.Title != "release" || body.MatchStatus != "unmatched" {
+		t.Fatalf("response = %+v", body)
+	}
+}
+
+func TestGetReleaseRejectsInvalidInfohash(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/releases/not-an-infohash", http.NoBody)
+	rec := httptest.NewRecorder()
+
+	New(&fakeStore{}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; response %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	var body struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Code != "invalid_input" || body.Message != "invalid infohash" {
 		t.Fatalf("response = %+v", body)
 	}
 }

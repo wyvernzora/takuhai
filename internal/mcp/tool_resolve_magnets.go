@@ -15,7 +15,7 @@ import (
 var toolResolveMagnetsDoc string
 
 func addResolveMagnetsTool(srv *mcpsdk.Server, s *Server) {
-	mcpsdk.AddTool(srv, &mcpsdk.Tool{
+	addStructuredTool[dispatch.ResolveMagnetsRequest, dispatch.ResolveMagnetsResult](srv, &mcpsdk.Tool{
 		Name:        "resolve_magnets",
 		Description: forLLM(toolResolveMagnetsDoc),
 		Annotations: readOnlyToolAnnotations(),

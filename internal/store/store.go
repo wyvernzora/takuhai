@@ -28,6 +28,7 @@ type Store interface {
 	QueueStats(ctx context.Context) (QueueStats, error)
 	CatalogStats(ctx context.Context) (CatalogStats, error)
 	ListReleases(ctx context.Context, q ReleaseQuery) (ReleasePage, error)
+	GetRelease(ctx context.Context, infohash string) (ReleaseDetail, error)
 	ResolveMagnets(ctx context.Context, infohashes []string) (map[string]string, error)
 	Close() error
 }
@@ -64,16 +65,7 @@ type ClaimedRelease struct {
 	ClaimToken   int64
 	AttemptCount int
 	LeaseExpires time.Time
-	RawItems     []RawItemEvent
-}
-
-type RawItemEvent struct {
-	ID          int64
-	Source      string
-	SourceID    string
-	Title       string
-	URL         string
-	PublishedAt time.Time
+	RawItems     []RawItemDetail
 }
 
 type SubmitParams struct {
@@ -120,4 +112,41 @@ type ReleaseItem struct {
 	PublishedAt time.Time
 	Confidence  float64
 	Sources     []string
+}
+
+type ReleaseDetail struct {
+	Infohash       string
+	Title          string
+	Magnet         *string
+	SizeBytes      *int64
+	PublishedAt    time.Time
+	Sources        []string
+	MatchStatus    string
+	Ref            *string
+	Confidence     *float64
+	FirstMatchedAt *time.Time
+	AttemptCount   int
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	RawItems       []RawItemDetail
+	MatchEvents    []MatchEventDetail
+}
+
+type RawItemDetail struct {
+	ID          int64
+	Source      string
+	SourceID    string
+	Title       string
+	URL         *string
+	PublishedAt time.Time
+	IngestedAt  time.Time
+}
+
+type MatchEventDetail struct {
+	ID         int64
+	Status     string
+	Ref        *string
+	Confidence *float64
+	Reason     *string
+	CreatedAt  time.Time
 }

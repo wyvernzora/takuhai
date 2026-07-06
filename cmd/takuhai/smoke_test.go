@@ -143,6 +143,31 @@ func TestSmoke(t *testing.T) {
 			t.Fatalf("POST /submit = %d, want 200", submitResp.StatusCode)
 		}
 
+		releaseResp, err := http.Get(baseURL + "/releases/" + smokeHexInfohash)
+		if err != nil {
+			t.Fatalf("GET /releases/{infohash}: %v", err)
+		}
+		defer releaseResp.Body.Close()
+		if releaseResp.StatusCode != http.StatusOK {
+			t.Fatalf("GET /releases/{infohash} = %d, want 200", releaseResp.StatusCode)
+		}
+		var release struct {
+			Infohash    string `json:"infohash"`
+			MatchStatus string `json:"match_status"`
+			RawItems    []struct {
+				SourceID string `json:"source_id"`
+			} `json:"raw_items"`
+			MatchEvents []struct {
+				Status string `json:"status"`
+			} `json:"match_events"`
+		}
+		if err := json.NewDecoder(releaseResp.Body).Decode(&release); err != nil {
+			t.Fatalf("decode /releases/{infohash}: %v", err)
+		}
+		if release.Infohash != smokeHexInfohash || release.MatchStatus != "matched" || len(release.RawItems) != 1 || len(release.MatchEvents) != 1 {
+			t.Fatalf("/releases/{infohash} = %+v, want matched release detail", release)
+		}
+
 		statsResp, err := http.Get(baseURL + "/queue/stats")
 		if err != nil {
 			t.Fatalf("GET /queue/stats: %v", err)
@@ -184,7 +209,7 @@ func TestSmoke(t *testing.T) {
 		for _, tool := range tools.Tools {
 			gotTools[tool.Name] = true
 		}
-		for _, want := range []string{"list_releases", "resolve_magnets"} {
+		for _, want := range []string{"list_releases", "get_release", "resolve_magnets"} {
 			if !gotTools[want] {
 				t.Fatalf("MCP tools/list missing %q (have %v)", want, gotTools)
 			}
@@ -219,6 +244,27 @@ func TestSmoke(t *testing.T) {
 		}
 		if env.Releases[0].Ref != "tvdb:12345" {
 			t.Fatalf("list_releases ref = %q, want tvdb:12345", env.Releases[0].Ref)
+		}
+
+		detail, err := session.CallTool(ctx, &mcpsdk.CallToolParams{
+			Name:      "get_release",
+			Arguments: map[string]any{"infohash": smokeHexInfohash},
+		})
+		if err != nil {
+			t.Fatalf("MCP get_release: %v", err)
+		}
+		if detail.IsError {
+			t.Fatalf("MCP get_release returned IsError: %v", detail.Content)
+		}
+		var releaseDetail struct {
+			Infohash    string `json:"infohash"`
+			MatchStatus string `json:"match_status"`
+		}
+		if err := json.Unmarshal([]byte(firstText(detail)), &releaseDetail); err != nil {
+			t.Fatalf("decode get_release: %v", err)
+		}
+		if releaseDetail.Infohash != smokeHexInfohash || releaseDetail.MatchStatus != "matched" {
+			t.Fatalf("get_release = %+v, want matched smoke release", releaseDetail)
 		}
 	})
 

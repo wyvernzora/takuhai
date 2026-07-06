@@ -44,6 +44,7 @@ or matcher attributes exist in this pass.
 | --- | --- | --- |
 | `POST` | `/ingest` | Accept a batch of crawler posts. |
 | `GET` | `/magnets/{infohash}` | Get the stored magnet URI for one release. |
+| `GET` | `/releases/{infohash}` | Get one release detail, raw source evidence, and match history. |
 | `POST` | `/queue/claim` | Lease claimable unmatched releases. |
 | `GET` | `/queue/stats` | Return queue/status counts, including exhausted. |
 | `POST` | `/submit` | Submit `matched`, `unmatched`, or `suppressed` for a claim. |
@@ -93,6 +94,17 @@ unmatched result becomes `exhausted`. Expired unmatched rows at or above the cap
 marked exhausted before new claims are offered. Claim crashes do not increment
 `attempt_count`.
 
+`GET /releases/{infohash}` returns the single-release full context view:
+representative release fields, `match_status`, nullable derived fields (`magnet`,
+`size_bytes`, `ref`, `confidence`, `first_matched_at`), `attempt_count`,
+timestamps, `raw_items`, and `match_events`. The response deliberately excludes
+lease internals (`claim_token`, `claimed_at`, `lease_expires_at`). `raw_items` are
+ordered by `id ASC`. `match_events` are ordered chronologically by `created_at ASC,
+id ASC`. Match events are intentionally unpaginated in v1; revisit pagination only
+if event counts grow enough to make responses large. Lists stay magnet-free, but
+release detail includes `magnet` because it is a single-row full-context lookup
+rather than a paged listing.
+
 ## MCP API
 
 The MCP surface is read-only:
@@ -100,6 +112,8 @@ The MCP surface is read-only:
 - `list_releases({ref?, since?, limit?, cursor?})` returns matched releases, optionally filtered by ref, with
   `infohash`, `ref`, `title`, `size_bytes`, `published_at`, `confidence`, `sources`, and
   `next_cursor`.
+- `get_release({infohash})` returns the same single-release detail object as
+  `GET /releases/{infohash}`.
 - `resolve_magnets({infohashes})` returns `{ "magnets": { "<infohash>": "<magnet>" } }`.
   Unknown infohashes and known releases without magnets are omitted.
   Returned magnets are the stored full magnet strings.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -20,6 +21,7 @@ func TestNewServerAdvertisesInstructions(t *testing.T) {
 		"Takuhai is a passive anime release index",
 		"read-only and consumer-facing",
 		"list_releases",
+		"get_release",
 		"resolve_magnets",
 		"Infohashes are release identity",
 	} {
@@ -41,6 +43,7 @@ func TestToolsAdvertiseEmbeddedDocs(t *testing.T) {
 		descriptions[tool.Name] = tool.Description
 	}
 	for name, want := range map[string]string{
+		"get_release":     "Fetch one release by infohash",
 		"list_releases":   "Return matched releases, newest first",
 		"resolve_magnets": "Resolve infohashes into stored magnet URIs",
 	} {
@@ -74,6 +77,7 @@ func TestToolsAdvertiseTypedInputSchemas(t *testing.T) {
 	assertOptionalProperty(t, schemas["list_releases"], "ref")
 	assertOptionalProperty(t, schemas["list_releases"], "limit")
 	assertOptionalProperty(t, schemas["list_releases"], "cursor")
+	assertRequiredProperty(t, schemas["get_release"], "infohash")
 	assertRequiredProperty(t, schemas["resolve_magnets"], "infohashes")
 }
 
@@ -91,6 +95,52 @@ func TestListReleasesPreservesTaxonomyErrors(t *testing.T) {
 	}
 	if got := firstText(res); !strings.Contains(got, `"code":"invalid_ref"`) {
 		t.Fatalf("error content = %s, want invalid_ref code", got)
+	}
+}
+
+func TestGetReleaseErrorOmitsStructuredContentAndSuccessKeepsIt(t *testing.T) {
+	session := newTestMCPSession(t)
+	unknown := strings.Repeat("0", 40)
+	res, err := session.CallTool(context.Background(), &mcpsdk.CallToolParams{
+		Name:      "get_release",
+		Arguments: map[string]any{"infohash": unknown},
+	})
+	if err != nil {
+		t.Fatalf("CallTool unknown: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("IsError = false, content = %v", res.Content)
+	}
+	if res.StructuredContent != nil {
+		t.Fatalf("StructuredContent = %#v, want nil on tool error", res.StructuredContent)
+	}
+	if got := firstText(res); !strings.Contains(got, `"code":"no_such_release"`) {
+		t.Fatalf("error content = %s, want no_such_release code", got)
+	}
+
+	known := strings.Repeat("1", 40)
+	res, err = session.CallTool(context.Background(), &mcpsdk.CallToolParams{
+		Name:      "get_release",
+		Arguments: map[string]any{"infohash": known},
+	})
+	if err != nil {
+		t.Fatalf("CallTool known: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("IsError = true, content = %v", res.Content)
+	}
+	content, ok := res.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("StructuredContent = %T, want map[string]any", res.StructuredContent)
+	}
+	if got := content["infohash"]; got != known {
+		t.Fatalf("infohash = %v, want %s", got, known)
+	}
+	if _, ok := content["raw_items"].([]any); !ok {
+		t.Fatalf("raw_items = %#v, want array", content["raw_items"])
+	}
+	if _, ok := content["match_events"].([]any); !ok {
+		t.Fatalf("match_events = %#v, want array", content["match_events"])
 	}
 }
 
@@ -215,6 +265,19 @@ func (f *fakeStore) ListReleases(_ context.Context, q store.ReleaseQuery) (store
 		}
 	}
 	return store.ReleasePage{}, nil
+}
+func (f *fakeStore) GetRelease(_ context.Context, infohash string) (store.ReleaseDetail, error) {
+	if infohash == strings.Repeat("0", 40) {
+		return store.ReleaseDetail{}, store.ErrNoSuchRelease
+	}
+	return store.ReleaseDetail{
+		Infohash:    infohash,
+		Title:       "release",
+		PublishedAt: time.Unix(1, 0).UTC(),
+		MatchStatus: "unmatched",
+		CreatedAt:   time.Unix(1, 0).UTC(),
+		UpdatedAt:   time.Unix(1, 0).UTC(),
+	}, nil
 }
 func (f *fakeStore) ResolveMagnets(context.Context, []string) (map[string]string, error) {
 	return nil, nil
